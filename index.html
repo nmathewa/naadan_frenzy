@@ -264,6 +264,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
           <button class="btn" id="rsNext">Next</button>
           <button class="btn alt" id="rsLeave" hidden>Leave co-op</button>
         </div>
+        <button class="btn alt wide" id="rsRace" hidden>Vallam Kali bonus race</button>
       </div>
     </div>
 
@@ -293,6 +294,17 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
         </div>
         <p class="note" id="cpStatus" role="status"></p>
         <button class="btn ghost wide" id="cpClose">Close</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="ovRace" hidden>
+      <div class="panel center">
+        <p class="eyebrow">Bonus race</p>
+        <h2>Vallam Kali</h2>
+        <canvas id="raceCv" width="680" height="440" style="width:100%;border-radius:10px;margin-top:10px;touch-action:none;display:block"></canvas>
+        <p class="note" id="raceNote"></p>
+        <button class="btn wide" id="raceRow" style="min-height:64px;font-size:22px">Row!</button>
+        <button class="btn ghost wide" id="raceDone" hidden>Done</button>
       </div>
     </div>
 
@@ -352,6 +364,7 @@ const BUY={
   buffalo:{name:'Buffalo calf',short:'Buffalo',cost:300,kind:'animal'},
   jack:{name:'Jackfruit tree',short:'Jackfruit',cost:350,kind:'tree'},
   kappa:{name:'Tapioca',cost:120,kind:'tree'},
+  cracker:{name:'Firecracker',short:'Cracker',cost:200,kind:'action'},
 };
 const ANIM={
   hen:{name:'hen',hunger:26,prod:9,speed:24,starve:14,out:'egg'},
@@ -408,12 +421,15 @@ const LEVELS=[
    tip:'The thattukada also fries pork in coconut oil. Keep both dishes cooking for the night crowd.'},
   {region:2,name:'Highrange Feast',rush:true,start:1500,animals:{hen:2,duck:1,pig:2,buffalo:1},trees:['palm','palm','jack','kappa'],buy:['hen','pig','buffalo','palm','jack','kappa'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','chips','meat','kada'],built:['oilmill','chips','meat','kada'],goals:{jackchips:5,kappabeef:5,porkfry:5,money:3500},gold:420,silver:660,jackal:{first:30,every:40},monkey:{first:25,every:30},
    tip:'The whole high range is coming to the feast. Run every kitchen at once.'},
+  {region:2,name:'Ottakomban’s Night',night:true,rush:true,start:1500,animals:{hen:2,pig:2,buffalo:1},trees:['palm','palm','jack','kappa'],buy:['hen','pig','buffalo','palm','cracker'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','chips','meat','kada'],built:['oilmill','chips','meat','kada'],goals:{kappabeef:5,porkfry:5,jackchips:4,money:3000},gold:420,silver:660,elephant:{first:25,every:45},jackal:{first:45,every:60},
+   tip:'Ottakomban, the one-tusked wild elephant, raids the farm and smashes whatever it reaches. Tap it to drive it off. Tap at the same moment as your friend or Kuttan for team hits worth triple, or throw a firecracker.'},
 ];
 const REGIONS={1:'Region 1 · Kuttanad backwaters',2:'Region 2 · Idukki high range'};
 const regionOf=i=>LEVELS[i].region||1;
 
 // ---------- save ----------
 const SKEY='naadan-frenzy-save-v1';
+const UNLOCK_ALL=true; // testing: every level is playable. Set to false to restore normal unlocking.
 function defSave(){return{unlocked:1,stars:{},coins:0,up:{well:0,store:0,auto:0,ws:0},music:true,sfx:true}}
 let SAVE=defSave();
 try{const s=JSON.parse(localStorage.getItem(SKEY)||'null'); if(s){SAVE=Object.assign(defSave(),s); SAVE.up=Object.assign(defSave().up,s.up||{});}}catch(e){}
@@ -577,6 +593,8 @@ function playSfx(n){
     case 'honk': horn(autoLvl(),t,true); break;
     case 'load': osc('sine',190,t,.1,.22,{f2:90}); noise(t,.06,.12,'lowpass',700); break;
     case 'ding': bell(t,1318,.16); break;
+    case 'elephant':{const o=osc('sawtooth',320,t,1.1,.12,{a:.08,f2:640,glide:.35,filter:'bandpass',ff:900,q:1.5}); o.frequency.exponentialRampToValueAtTime(420,t+1.1); break;}
+    case 'cracker': noise(t,.25,.5,'lowpass',2500,.7); noise(t+.05,.5,.25,'bandpass',600,1); break;
     case 'ev_hartal': [0,.25].forEach(d=>osc('sine',1900,t+d,.18,.12,{f2:1700})); break;
     case 'ev_monsoon': noise(t,1.6,.22,'lowpass',260,.7,undefined,.15); noise(t+.1,.8,.12,'lowpass',600,.7); break;
     case 'ev_powercut': osc('square',900,t,.35,.06,{f2:60,filter:'lowpass',ff:2000}); break;
@@ -1103,13 +1121,14 @@ function hardLevel(L,li){
   for(const k in L.goals) H.goals[k]=k==='money'?Math.round(L.goals.money*1.8/50)*50:Math.ceil(L.goals[k]*1.8);
   H.gold=Math.round(L.gold*1.2); H.silver=Math.round(L.silver*1.25);
   H.jackal={first:Math.round((L.jackal?L.jackal.first:35)*.6),every:Math.round((L.jackal?L.jackal.every:40)*.5)};
+  if(L.elephant) H.elephant={first:L.elephant.first,every:Math.round(L.elephant.every*.75)};
   if(L.monkey||li>=2) H.monkey={first:Math.round((L.monkey?L.monkey.first:30)*.6),every:Math.round((L.monkey?L.monkey.every:36)*.5)};
   return H;
 }
 function newGame(li){
   const L=(coop()||BOT.armed)?hardLevel(LEVELS[li],li):LEVELS[li];
   G={li,L,money:L.start,t:0,state:'intro',grass:new Float32Array(COLS*ROWS),gT:new Float32Array(COLS*ROWS),
-    animals:[],trees:[],products:[],jackals:[],monkeys:[],cages:[],boats:[],fx:[],floats:[],
+    animals:[],trees:[],products:[],jackals:[],monkeys:[],elephants:[],cages:[],boats:[],fx:[],floats:[],nextE:L.elephant?L.elephant.first:Infinity,
     store:{},collected:{},ws:[],autoBoost:0,water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
     nextJ:L.jackal?L.jackal.first:Infinity,ev:null,evOn:li>=2&&L.events!==false,nextEv:(L.hard?30:50)*rnd(.9,1.3),nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
   G.hard=!!L.hard;
@@ -1169,7 +1188,8 @@ function update(dt){
   const spoil=evOn('monsoon')?2:1; G.products.forEach(p=>{p.age+=dt; p.life-=dt*spoil;});
   const np=G.products.length; G.products=G.products.filter(p=>p.life>0); if(G.products.length<np) sfx('spoil');
   G.ws.forEach((w,i)=>{
-    if(!w||!w.busy||evOn('powercut')) return; w.t+=dt;
+    if(w&&w.broken>0) w.broken=Math.max(0,w.broken-dt);
+    if(!w||!w.busy||evOn('powercut')||w.broken>0) return; w.t+=dt;
     if(w.t>=w.dur){const j=w.cur||{out:WS[w.type].icon,n:1}; for(let k=0;k<j.n;k++) dropProduct(j.out,G.wsX[i]+rnd(-22,22),FY+6+k*5,25);
       fx('puff',G.wsX[i],WS_BY-10); sfx('ding');
       if(w.jobs.length){w.cur=w.jobs.shift(); w.t=0;} else{w.busy=false; w.cur=null;} w.queue=w.jobs.length;}
@@ -1185,6 +1205,8 @@ function update(dt){
   G.boats=G.boats.filter(b=>b.t<b.dur);
   // predators
   updEvents(dt);
+  if(G.L.elephant){G.nextE-=dt; if(G.nextE<=0){G.nextE=G.L.elephant.every*rnd(.85,1.15); spawnElephant();}}
+  G.elephants.forEach(e=>{if(e.stun>0) e.stun-=dt; else updElephant(e,dt);}); G.elephants=G.elephants.filter(e=>!e.gone);
   if(G.L.jackal){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter&&!ANIM[a.type].meat)) spawnJackal();}}
   if(G.L.monkey){G.nextM-=dt; if(G.nextM<=0){G.nextM=G.L.monkey.every*rnd(.8,1.2); spawnMonkey();}}
   G.jackals.forEach(j=>updJackal(j,dt)); G.jackals=G.jackals.filter(j=>!j.gone);
@@ -1408,12 +1430,127 @@ $('#btnSay').onclick=()=>{
 };
 $('#sayGrid').addEventListener('click',e=>{const b=e.target.closest('[data-say]'); if(!b) return; say(b.dataset.say); $('#sayPanel').hidden=true;});
 
+// ---------- Ottakomban, the one-tusked wild elephant (boss) ----------
+// It tramples grass, flattens trees and smashes a workshop it reaches. Taps drive it off;
+// two players (or a player and Kuttan) hitting within 0.7s of each other score a team hit worth 3.
+function spawnElephant(){
+  const side=Math.random()<.5?-1:1;
+  G.elephants.push({id:++UID,x:side<0?-50:W+50,y:FY+60+Math.random()*(FH-120),dir:-side,pts:0,need:G.hard?16:12,state:'raid',t:0,walk:0,hits:{},target:null,flat:[]});
+  toast('Ottakomban is raiding the farm! Tap it together to drive it off.'); sfx('elephant');
+}
+function elephantTarget(e){
+  const trees=G.trees.filter(tr=>tr.g>.5&&!e.flat.includes(tr));
+  if(trees.length&&Math.random()<.7){const tr=trees[Math.floor(Math.random()*trees.length)]; return{x:tr.x,y:tr.y,tree:tr};}
+  const ws=G.ws.map((w,i)=>w&&w.built?i:-1).filter(i=>i>=0);
+  if(ws.length){const i=ws[Math.floor(Math.random()*ws.length)]; return{x:G.wsX[i],y:FY+18,ws:i};}
+  const p=randField(40); return{x:p.x,y:p.y};
+}
+function updElephant(e,dt){
+  e.t+=dt; e.mv=true; e.walk+=dt;
+  if(e.state==='flee'){fleeTo(e,70,dt); return;}
+  if(e.t>32){e.state='flee'; return;}
+  if(!e.target) e.target=elephantTarget(e);
+  const arrived=moveTo(e,e.target.x,e.target.y,G.hard?20:16,dt); e.mv=true;
+  const c=Math.floor((e.x-FX)/CELL), r=Math.floor((e.y-FY)/CELL);
+  for(let dr=-1;dr<=0;dr++)for(let dc=-1;dc<=1;dc++){const cc=c+dc, rr2=r+dr; if(cc>=0&&rr2>=0&&cc<COLS&&rr2<ROWS){const i=rr2*COLS+cc; G.grass[i]=G.gT[i]=0;}}
+  if(arrived){
+    const tg=e.target;
+    if(tg.tree&&G.trees.includes(tg.tree)){tg.tree.g=.3; e.flat.push(tg.tree); fx('dust',tg.x,tg.y); sfx('thud'); toast('Ottakomban flattened a tree. It will grow back.');}
+    if(tg.ws!==undefined&&G.ws[tg.ws]){G.ws[tg.ws].broken=12; fx('dust',G.wsX[tg.ws],WS_BY-10); sfx('build'); toast(`Ottakomban smashed the ${WS[G.ws[tg.ws].type].name.toLowerCase()}! It needs 12 seconds of repairs.`);}
+    e.target=null;
+  }
+}
+function hitElephant(e,actor){
+  const t=performance.now()/1000; e.hits[actor]=t;
+  const team=Object.entries(e.hits).some(([a,ht])=>a!==actor&&t-ht<.7);
+  e.pts+=team?3:1; e.stun=.15; sfx('hit');
+  if(team){floatText('TEAM HIT!',e.x,e.y-60,'#7fe3ee'); e.hits={};}
+  if(e.pts>=e.need){e.state='flee'; sfx('elephant'); toast('Ottakomban ran off into the forest!'); floatText('+₹150',e.x,e.y-40,'#ffe39a'); G.money+=150;}
+}
+function crackers(){
+  const live=G.elephants.filter(e=>e.state!=='flee');
+  if(!live.length){toast('No elephant to scare right now.'); return false;}
+  live.forEach(e=>{e.state='flee'; fx('puff',e.x,e.y-30);}); sfx('cracker'); toast('Bang! The firecracker scared Ottakomban away.');
+  return true;
+}
+function drawElephantBoss(g,e,t){
+  drawElephant(g,e.x,e.y,e.dir,e.walk,true,{tusks:1,angry:e.state!=='flee',s:.85});
+  if(e.state==='flee') return;
+  const w=54, p=Math.min(1,e.pts/e.need), y=e.y-80;
+  g.fillStyle='rgba(36,24,12,.8)'; rr(g,e.x-w/2,y,w,8,4); g.fill();
+  g.fillStyle='#7fe3ee'; rr(g,e.x-w/2+1,y+1,(w-2)*p,6,3); g.fill();
+}
+
+// ---------- Vallam Kali (snake-boat race) bonus round ----------
+const RACE={on:false};
+const RW=340, RH=220, BEAT=.55;
+function startRace(){
+  Object.assign(RACE,{on:true,t:0,me:{x:0,v:0},ai:{x:0,v:0},lastBeat:-1,tapped:-1,done:false,fb:'',fbT:0});
+  $('#raceRow').hidden=false; $('#raceDone').hidden=true;
+  $('#raceNote').textContent='Tap Row! on the drum beat. On-beat strokes are strongest; mashing splashes.';
+  show('#ovRace');
+}
+function raceRow(){
+  const R=RACE; if(!R.on||R.done||R.t<3) return;
+  const rt=R.t-3, nb=Math.round(rt/BEAT), off=Math.abs(rt-nb*BEAT);
+  if(R.tapped===nb){R.me.v*=.85; R.fb='Splash!'; R.fbT=.5; return;}
+  R.tapped=nb; const q=Math.max(0,1-off/(BEAT/2));
+  R.me.v+=1.1+2.3*q; R.fb=q>.8?'On beat!':q>.45?'Good':'Late'; R.fbT=.5;
+}
+function raceTick(dt){
+  const R=RACE; R.t+=dt; R.fbT=Math.max(0,R.fbT-dt);
+  if(R.t>=3&&!R.done){
+    const rt=R.t-3, bi=Math.floor(rt/BEAT);
+    if(bi!==R.lastBeat){R.lastBeat=bi; if(SAVE.sfx&&audio()){const a=AC.currentTime; bi%4===0?drumLow(a,.55):drumSlap(a,.4);}}
+    R.me.x+=R.me.v*dt; R.me.v*=Math.pow(.55,dt);
+    R.ai.v=6.4+Math.sin(R.t*1.3)*.8; R.ai.x+=R.ai.v*dt;
+    if(R.me.x>=100||R.ai.x>=100){
+      R.done=true; const won=R.me.x>=R.ai.x, coins=won?15:3; SAVE.coins+=coins; persist();
+      $('#raceNote').textContent=won?`You won the Vallam Kali! +${coins} gold coins.`:`The other boat won this time. +${coins} gold coins for taking part.`;
+      $('#raceRow').hidden=true; $('#raceDone').hidden=false; if(won) sfx('win');
+    }
+  }
+  drawRace();
+}
+function drawBoatRace(g,x,y,col,t,beat){
+  g.save(); g.translate(x,y);
+  g.fillStyle='rgba(10,40,45,.3)'; ell(g,-25,6,46,4); g.fill();
+  g.fillStyle='#3b2412'; g.beginPath(); g.moveTo(-74,-2); g.quadraticCurveTo(-25,10,22,0); g.lineTo(26,-3); g.quadraticCurveTo(-25,4,-70,-6); g.closePath(); g.fill();
+  g.strokeStyle='#3b2412'; g.lineWidth=4; g.lineCap='round'; g.beginPath(); g.moveTo(-72,-4); g.quadraticCurveTo(-82,-18,-76,-34); g.stroke();
+  g.fillStyle=col; tri(g,-76,-34,-76,-46,-64,-40); g.fill();
+  const stroke=Math.sin(beat*Math.PI*2)*.5;
+  for(let k=0;k<9;k++){const rx=-60+k*9;
+    g.fillStyle='#f4f0e6'; g.fillRect(rx-1.5,-9,3,6); g.fillStyle='#6b4a30'; ell(g,rx,-11,1.8,1.8); g.fill();
+    g.strokeStyle='#a07a48'; g.lineWidth=1.2; g.beginPath(); g.moveTo(rx,-6); g.lineTo(rx-4+stroke*6,4); g.stroke();}
+  g.restore();
+}
+function drawRace(){
+  const c=$('#raceCv'), g=c.getContext('2d'), k=c.width/RW, R=RACE; g.setTransform(k,0,0,k,0,0);
+  const sky=g.createLinearGradient(0,0,0,RH); sky.addColorStop(0,'#3a8f99'); sky.addColorStop(1,'#1f6672'); g.fillStyle=sky; g.fillRect(0,0,RW,RH);
+  g.fillStyle='#4f8a3a'; g.fillRect(0,0,RW,26); g.fillStyle='#3b7a34'; for(let x=0;x<RW;x+=18){ell(g,x+(R.t*4%18),22,12,8); g.fill();}
+  g.strokeStyle='rgba(200,240,240,.35)'; g.lineWidth=1.2; g.beginPath();
+  for(let n=0;n<18;n++){const x=((n*47-R.t*40)%(RW+40)+RW+40)%(RW+40)-20, y=45+(n%6)*28; g.moveTo(x,y); g.quadraticCurveTo(x+8,y-2,x+16,y);} g.stroke();
+  const sx=v=>30+v/100*(RW-80);
+  g.fillStyle='#fff6d8'; g.fillRect(sx(100)+2,30,3,RH-40);
+  const beat=R.t<3?0:((R.t-3)%BEAT)/BEAT;
+  drawBoatRace(g,sx(R.ai.x)+50,95,'#d8352a',R.t,R.ai.x*.3);
+  drawBoatRace(g,sx(R.me.x)+50,165,'#2f9a4a',R.t,beat);
+  g.font='800 11px '+FONT; g.textAlign='left'; g.textBaseline='middle'; g.fillStyle='#ffd7cf'; g.fillText('Rival',6,80); g.fillStyle='#d6f5d0'; g.fillText('You',6,150);
+  if(R.t<3){g.font='800 40px '+FONT; g.textAlign='center'; g.fillStyle='#fff6d8'; g.fillText(String(3-Math.floor(R.t)),RW/2,RH/2);}
+  else if(!R.done){const p=1-beat; g.strokeStyle=`rgba(255,246,216,${.4+.6*p})`; g.lineWidth=3; ell(g,RW/2,RH-18,8+p*6,8+p*6); g.stroke();
+    if(R.fbT>0){g.font='800 14px '+FONT; g.textAlign='center'; g.fillStyle=R.fb==='On beat!'?'#ffe39a':'#fff6d8'; g.fillText(R.fb,RW/2,RH-42);}}
+}
+$('#raceRow').addEventListener('pointerdown',e=>{e.preventDefault(); raceRow();});
+$('#raceDone').onclick=()=>{RACE.on=false; hide('#ovRace');};
+$('#rsRace').onclick=()=>{$('#rsRace').hidden=true; hide('#ovResult'); startRace();};
+
 // ---------- input ----------
 function onTap(x,y,remote){
   if(!G||G.state!=='play'||(!remote&&isPaused())) return;
   if(!remote) audio();
   const mk=(Math.abs(x-WH.x)<64&&y>490&&y<602)||(x>266&&y>515&&y<606);
   if(NET.role==='guest'){if(mk){if(x>266&&G.truck.state==='home') playSfx('honk'); openMarket();} else NET.send({t:'tap',x:r1(x),y:r1(y)}); return;}
+  for(const e of G.elephants) if(e.state!=='flee'&&dist(e.x+e.dir*10,e.y-26,x,y)<42){hitElephant(e,ACTOR||'kuttan'); return;}
   for(const m of G.monkeys) if(m.state!=='scared'&&dist(m.x,m.y-10,x,y)<26){hitMonkey(m); return;}
   for(const j of G.jackals) if(dist(j.x+3*j.dir,j.y-4,x,y)<28){hitJackal(j); return;}
   let best=null,bd=24; for(const p of G.products){const d=dist(p.x,p.y-3,x,y); if(d<bd){bd=d;best=p;}}
@@ -1454,6 +1591,7 @@ function tapWorkshop(i){
     else{toast(`Building the ${d.name} costs ₹${d.cost}.`); sfx('err');}
     return;
   }
+  if(w.broken>0){toast(`Ottakomban smashed the ${d.name.toLowerCase()}. Repairs take ${Math.ceil(w.broken)} more seconds.`); return;}
   if(d.animal){toast('Tap a grown pig or buffalo (green tick) to send it to the meat shop.'); return;}
   if(w.busy&&w.jobs.length>=3){toast('That queue is full.'); return;}
   const r=pickRecipe(d);
@@ -1505,6 +1643,7 @@ function plantAt(x,y){
 function buy(k){
   const b=BUY[k];
   if(G.money<b.cost){toast(`A ${b.name.toLowerCase()} costs ₹${b.cost}.`); sfx('err'); return;}
+  if(b.kind==='action'){if(crackers()){G.money-=b.cost;} return;}
   if(b.kind==='tree'){if(G.trees.length>=TREE_SLOTS.length){toast('All the planting spots are taken.'); sfx('err'); return;} G.money-=b.cost; addTree(k,false); sfx('grow');}
   else{if(G.animals.length+G.boats.filter(b=>!b.spawned).length>=14){toast('The farm has as many animals as it can feed.'); sfx('err'); return;}
     G.money-=b.cost; G.boats.push({id:++UID,t:0,dur:4,cargo:k,spawned:false}); sfx('boat');}
@@ -1535,6 +1674,7 @@ function render(){
   G.products.forEach(p=>list.push([p.y-1,()=>drawProduct(p)]));
   G.animals.forEach(a=>list.push([a.y,()=>drawAnimal(a)]));
   G.cages.forEach(c=>list.push([c.y,()=>drawCage(c)]));
+  G.elephants.forEach(e=>list.push([e.y,()=>drawElephantBoss(g,e,t)]));
   G.jackals.forEach(j=>list.push([j.y,()=>{drawJackal(g,j.x,j.y,j.dir,j.walk,j.mv,j.stun); if(j.carry) drawCarried(j); tapPips(j.x,j.y-24,j.taps,j.need);}]));
   G.monkeys.forEach(m=>list.push([m.y,()=>{drawMonkey(g,m.x,m.y,m.dir,m.walk,m.mv,m.item,m.stun); if(m.state!=='scared') tapPips(m.x,m.y-32,m.taps,m.need);}]));
   list.sort((a,b)=>a[0]-b[0]).forEach(e=>e[1]());
@@ -1554,6 +1694,7 @@ function render(){
   G.boats.forEach(b=>{const p=b.t/b.dur; let x;
     if(p<.4){const q=p/.4; x=-60+(JETTY+60)*(1-Math.pow(1-q,2));} else if(p<.55) x=JETTY; else{const q=(p-.55)/.45; x=JETTY+(W+80-JETTY)*q*q;}
     drawBoat(g,x+8,b.spawned?null:b.cargo,t);});
+  if(G.L.night){g.fillStyle='rgba(18,26,70,.28)'; g.fillRect(0,0,W,H);}
   drawEvents(g,t);
   // effects
   G.fx.forEach(f=>drawFx(f));
@@ -1584,6 +1725,8 @@ function drawWorkshop(i,t){
     return;
   }
   drawKBCached(g,w.type+bw,x,WS_BY,bw,{wall:d.wall,pillar:d.pillar,sign:d.sign,extra:WS_EXTRA[w.type]});
+  if(w.broken>0){g.fillStyle='rgba(40,20,10,.55)'; rr(g,x-bw/2,WS_BY-62,bw,58,6); g.fill(); g.strokeStyle='#e2b33c'; g.lineWidth=2.5; g.beginPath(); g.moveTo(x-14,WS_BY-48); g.lineTo(x+2,WS_BY-34); g.lineTo(x-6,WS_BY-28); g.lineTo(x+12,WS_BY-14); g.stroke();
+    g.fillStyle='#fff6d8'; g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText(`Repairs ${Math.ceil(w.broken)}s`,x,WS_BY-8); return;}
   if(w.busy){
     const p=Math.min(1,w.t/w.dur);
     g.fillStyle='rgba(36,24,12,.75)'; rr(g,x-30,WS_BY+3,60,7,3.5); g.fill();
@@ -1648,7 +1791,7 @@ function drawFx(f){
 }
 
 // ---------- UI ----------
-const OVS=['#ovMap','#ovIntro','#ovMarket','#ovPause','#ovResult','#ovShop','#ovCoop'];
+const OVS=['#ovMap','#ovIntro','#ovMarket','#ovPause','#ovResult','#ovShop','#ovCoop','#ovRace'];
 const isPaused=()=>OVS.some(id=>!$(id).hidden);
 const BEHIND=['#hud','#stageWrap','#buybar'];
 function syncInert(){const any=OVS.some(id=>!$(id).hidden); BEHIND.forEach(s=>{$(s).inert=any;});}
@@ -1667,6 +1810,7 @@ function buildIcons(){
   ICON.buy_buffalo=mkIcon(g=>{g.scale(.95,.95); drawBuffalo(g,-3,10,1,0,false,1);});
   ICON.buy_jack=mkIcon(g=>{g.scale(.5,.5); drawJack(g,0,34,1,0,.9);});
   ICON.buy_kappa=mkIcon(g=>{g.scale(.75,.75); drawKappa(g,0,20,1,0);});
+  ICON.buy_cracker=mkIcon(g=>{g.fillStyle='#d8352a'; rr(g,-6,-10,12,22,3); g.fill(); g.fillStyle='#e2b33c'; g.fillRect(-6,-4,12,3); g.fillRect(-6,4,12,3); g.strokeStyle='#5b3a1f'; g.lineWidth=1.5; g.beginPath(); g.moveTo(0,-10); g.quadraticCurveTo(4,-15,2,-18); g.stroke(); g.fillStyle='#ffd23a'; ell(g,2,-18,2.5,2.5); g.fill();});
   ICON.money=mkIcon(g=>{g.scale(1.4,1.4); drawCoin(g);});
 }
 let toastTimer=0;
@@ -1783,10 +1927,12 @@ function showResult(){
   $('#rsNote').textContent=regionEnd?(regionOf(i)===1?'Kuttanad is done. Next: the Idukki high range, with jackfruit, tapioca, pigs and buffalo.':'The high range is done. More regions are coming.'):m<3?`Finish under ${fmtT(m===1?G.L.silver:G.L.gold)} for a better medal. Spend gold coins on upgrades from the map.`:'Spend gold coins on upgrades from the map.';
   const g=NET.role==='guest'; $('#rsNext').hidden=last||g; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
   if(g) $('#rsNote').textContent='Your friend picks what to play next. '+$('#rsNote').textContent;
+  $('#rsRace').hidden=m<3;
   show('#ovResult'); sfx('ding');
 }
 $('#rsMap').onclick=()=>goMap();
 function showFail(){
+  $('#rsRace').hidden=true;
   $('#rsEyebrow').textContent='Level failed'; $('#rsName').textContent=G.L.name;
   const md=$('#rsMedal'); md.textContent='Failed'; md.style.background='var(--laterite)'; md.style.color='var(--cream)';
   $('#rsTime').textContent='Time '+fmtT(G.t); $('#rsCoinPill').hidden=true;
@@ -1804,7 +1950,7 @@ function plural(w,n){return n>1&&!w.endsWith('s')&&!MASS.has(w)?w+'s':w;}
 function renderMap(){
   if(typeof renderCoopBar==='function') renderCoopBar();
   $('#mapCoins').textContent=SAVE.coins;
-  $('#levels').innerHTML=LEVELS.map((L,i)=>{const locked=i>=SAVE.unlocked, st=SAVE.stars[i]||0;
+  $('#levels').innerHTML=LEVELS.map((L,i)=>{const locked=!UNLOCK_ALL&&i>=SAVE.unlocked, st=SAVE.stars[i]||0;
     return (i===0||regionOf(i)!==regionOf(i-1)?`<p class="region">${REGIONS[regionOf(i)]}</p>`:'')+`<button class="lvl ${i%2?'r':'l'}" data-lvl="${i}" ${locked?'disabled':''} aria-label="Level ${i+1}, ${L.name}${locked?', locked':st?', '+MEDAL_NAME[st]+' medal':''}"><span class="num">${i+1}</span><span class="lt"><b>${L.name}</b><small>${goalSummary(L)}</small></span><span class="medal m${st}"></span></button>`;}).join('');
 }
 $('#levels').addEventListener('click',e=>{const b=e.target.closest('.lvl'); if(!b||b.disabled) return; if(NET.role==='guest'){toast('Your friend picks the level while you play together.'); return;} audio(); startLevel(+b.dataset.lvl);});
@@ -2009,7 +2155,8 @@ function snap(){
     mk:G.monkeys.map(m=>[m.id,r1(m.x),r1(m.y),m.dir,m.taps,r1(m.stun),m.item||0,m.mv?1:0,m.state==='scared'?1:0]),
     c:G.cages.map(c=>[r1(c.x),r1(c.y),r1(c.t),c.max]),
     b:G.boats.map(b=>[b.id,r1(b.t),b.dur,b.cargo,b.spawned?1:0]),
-    ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue]),
+    el:G.elephants.map(e=>[e.id,r1(e.x),r1(e.y),e.dir,e.pts,e.need,e.state==='flee'?1:0]),
+    ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue,r1(w.broken||0)]),
     ev:G.ev?[EVENT_KEYS.indexOf(G.ev.type),r1(G.ev.t),G.ev.dur,r1(G.ev.x||0),r1(G.ev.y||0),G.ev.hit?1:0]:0,
     tk:[T.state==='home'?0:1,r1(T.t),T.cargo,T.sold?1:0],
     s:G.store,co:G.collected,fr:G.failReason||'',ev:NET.ev.splice(0)};
@@ -2032,7 +2179,8 @@ function applySnap(d){
   G.cages=d.c.map(([x,y,t,max])=>({x,y,t,max}));
   const bOld={}; G.boats.forEach(b=>{bOld[b.id]=b;});
   G.boats=d.b.map(([id,t,dur,cargo,sp])=>Object.assign(bOld[id]||{id},{t,dur,cargo,spawned:!!sp}));
-  d.ws.forEach((r,i)=>{const w=G.ws[i]; if(w&&r){w.built=!!r[0]; w.busy=!!r[1]; w.t=r[2]; w.dur=r[3]; w.queue=r[4];}});
+  d.ws.forEach((r,i)=>{const w=G.ws[i]; if(w&&r){w.built=!!r[0]; w.busy=!!r[1]; w.t=r[2]; w.dur=r[3]; w.queue=r[4]; w.broken=r[5]||0;}});
+  G.elephants=syncList(G.elephants,d.el||[],([id,x,y,dir,pts,need,fl],o)=>Object.assign(o||{id,walk:0},{tx:x,ty:y,dir,pts,need,state:fl?'flee':'raid',mv:true}));
   G.ev=d.ev?{type:EVENT_KEYS[d.ev[0]],t:d.ev[1],dur:d.ev[2],x:d.ev[3],y:d.ev[4],hit:!!d.ev[5]}:null;
   const T=G.truck; T.state=d.tk[0]?'going':'home'; T.t=d.tk[1]; T.cargo=d.tk[2]; T.sold=!!d.tk[3];
   G.store=d.s; G.collected=d.co;
@@ -2048,7 +2196,7 @@ function applySnap(d){
 }
 function guestTick(dt){
   const k=Math.min(1,dt*10);
-  for(const o of G.animals.concat(G.jackals,G.monkeys)){if(o.tx===undefined) continue; o.x+=(o.tx-o.x)*k; o.y+=(o.ty-o.y)*k; if(o.mv) o.walk+=dt;}
+  for(const o of G.animals.concat(G.jackals,G.monkeys,G.elephants)){if(o.tx===undefined) continue; o.x+=(o.tx-o.x)*k; o.y+=(o.ty-o.y)*k; if(o.mv) o.walk+=dt;}
   if(G.state==='play'){
     G.products.forEach(p=>{p.age+=dt; p.life-=dt;});
     if(G.ev) G.ev.t+=dt;
@@ -2100,6 +2248,8 @@ function botWorkshop(){ // the next workshop job Kuttan can start, or null
 }
 function botChoose(){
   const free=storeCap()-storeUsed(), inField=o=>o.x>FX&&o.x<FX+FW&&o.y>FY-10&&o.y<FY+FH+10;
+  const el=G.elephants.find(e=>e.state!=='flee'&&inField(e));
+  if(el) return botTap(()=>el.gone||el.state==='flee'?null:[el.x+el.dir*10,el.y-26],'Fighting Ottakomban');
   const j=G.jackals.find(j=>j.carry&&inField(j))||G.jackals.find(j=>j.state==='hunt'&&inField(j));
   if(j) return botTap(()=>j.gone?null:[j.x+3*j.dir,j.y-4],'Chasing the jackal');
   const m=G.monkeys.find(m=>m.state!=='scared'&&inField(m));
@@ -2182,6 +2332,7 @@ function fit(){
 let last=performance.now(), frozen=false;
 function frame(ts){
   const dt=Math.min(.05,(ts-last)/1000); last=ts; now+=dt;
+  if(RACE.on&&!$('#ovRace').hidden) raceTick(dt);
   if(G){
     if(NET.role==='guest') guestTick(dt);
     else if(G.state==='play'&&(NET.role==='host'||!isPaused())) update(dt);

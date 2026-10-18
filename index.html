@@ -36,6 +36,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .icon-btn{width:40px;height:40px;flex:none;border-radius:8px;border:0;background:rgba(247,239,218,.15);color:var(--cream);font-weight:800;font-size:13px;letter-spacing:1px}
 #lvlName{flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #money{font-weight:800;font-size:17px;color:#ffe39a;font-variant-numeric:tabular-nums}
+#timer.low{background:#a9472b;color:#fff}
 #timer{display:flex;align-items:center;gap:5px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;background:rgba(0,0,0,.25);padding:1px 9px;border-radius:20px}
 .mdot{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 1.5px rgba(0,0,0,.25) inset}
 #goals{display:flex;flex-wrap:wrap;gap:5px}
@@ -241,12 +242,12 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 
     <div class="overlay" id="ovResult" hidden>
       <div class="panel center">
-        <p class="eyebrow">Level complete</p>
+        <p class="eyebrow" id="rsEyebrow">Level complete</p>
         <h2 id="rsName"></h2>
         <div class="bigmedal" id="rsMedal">Gold</div>
         <div class="stats">
           <span class="pill light" id="rsTime"></span>
-          <span class="pill light"><span class="coin"></span><span id="rsCoins"></span></span>
+          <span class="pill light" id="rsCoinPill"><span class="coin"></span><span id="rsCoins"></span></span>
         </div>
         <p class="note" id="rsNote"></p>
         <div class="row-btns">
@@ -381,6 +382,19 @@ const autoTrip=()=>UPG.auto.trip[UP().auto], wsMult=()=>UPG.ws.mult[UP().ws];
 
 // ---------- sound ----------
 // All audio is synthesised with Web Audio, so there are no sound files to load.
+// Custom sound files (published next to the page in sounds/). Moments without a file keep the synthesised sound.
+const CUSTOM_SFX={     // sound name -> file
+  fail:'sounds/fail.mp3',
+  attack:'sounds/attack.mp3',  // a jackal grabs a bird or a monkey steals goods (no sound when they arrive)
+};
+const CUSTOM_MUSIC={}; // map / play / rush -> file, e.g. play:'sounds/music.mp3'
+const BUF={};
+function loadCustom(){
+  const all=[...Object.entries(CUSTOM_SFX).map(([k,u])=>['sfx:'+k,u]),...Object.entries(CUSTOM_MUSIC).map(([k,u])=>['music:'+k,u])];
+  all.forEach(([key,url])=>fetch(url).then(r=>{if(!r.ok) throw new Error(url); return r.arrayBuffer();}).then(b=>AC.decodeAudioData(b)).then(buf=>{BUF[key]=buf;}).catch(()=>{}));
+}
+const CUSTOM_VOL={fail:.8,attack:.8};
+function playBuf(buf,dest,vol){const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=buf; g.gain.value=vol||1; s.connect(g); g.connect(dest); s.start(); return s;}
 let AC=null, MASTER=null, MUSIC=null, MUSBUS=null, SFXG=null, ECHO=null, NOISE=null;
 const MUSIC_VOL=.55, SFX_VOL=.9;
 function audio(){
@@ -396,6 +410,7 @@ function audio(){
     SFXG=AC.createGain(); SFXG.gain.value=SAVE.sfx?SFX_VOL:0; SFXG.connect(MASTER);
     NOISE=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);
     const nd=NOISE.getChannelData(0); for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+    loadCustom();
   }
   if(AC.state==='suspended'&&!document.hidden) AC.resume();
   return AC;
@@ -465,12 +480,13 @@ function paddle(v){
   if(!SAVE.sfx||!audio()) return; const t=AC.currentTime+.01;
   noise(t,.18,.12*v,'lowpass',900,.7,undefined,.04); noise(t+.05,.1,.05*v,'bandpass',2400,1.5);
 }
-const SFX_GAP={pop:.03,click:.05,water:.08,cluck:.25,quack:.25,spoil:.3,thud:.2,ding:.15,hungry:1.5,err:.15,chatter:.4};
+const SFX_GAP={attack:2.5,pop:.03,click:.05,water:.08,cluck:.25,quack:.25,spoil:.3,thud:.2,ding:.15,hungry:1.5,err:.15,chatter:.4};
 const lastSfx={};
 function sfx(n){playSfx(n); if(NET.role==='host'&&n!=='click') NET.ev.push({s:n});}
 function playSfx(n){
   if(!SAVE.sfx) return; const a=audio(); if(!a) return; const t=a.currentTime+.01;
   if(lastSfx[n]!==undefined&&t-lastSfx[n]<(SFX_GAP[n]||0)) return; lastSfx[n]=t;
+  if(BUF['sfx:'+n]){playBuf(BUF['sfx:'+n],SFXG,CUSTOM_VOL[n]); return;}
   switch(n){
     case 'pop': osc('triangle',620,t,.09,.22,{f2:980}); break;
     case 'click': osc('triangle',900,t,.04,.08); break;
@@ -485,6 +501,7 @@ function playSfx(n){
     case 'buy': osc('triangle',520,t,.08,.18); osc('triangle',780,t+.07,.14,.18); break;
     case 'cluck': for(let i=0;i<2;i++) osc('square',820-i*60,t+i*.11,.06,.07,{f2:600,filter:'bandpass',ff:1400,q:3}); break;
     case 'quack': for(let i=0;i<2;i++) osc('sawtooth',360,t+i*.16,.11,.12,{f2:240,filter:'bandpass',ff:1100,q:2.5}); break;
+    case 'attack':
     case 'squawk': osc('sawtooth',900,t,.25,.12,{f2:500,filter:'bandpass',ff:1600,q:2}); osc('square',1100,t+.1,.2,.06,{f2:700,filter:'bandpass',ff:1800,q:3}); break;
     case 'howl':{
       const o=osc('sine',380,t,1.3,.13,{a:.25,f2:620,glide:.6}); o.frequency.exponentialRampToValueAtTime(430,t+1.4);
@@ -496,6 +513,7 @@ function playSfx(n){
     case 'honk': horn(UP().auto,t,true); break;
     case 'load': osc('sine',190,t,.1,.22,{f2:90}); noise(t,.06,.12,'lowpass',700); break;
     case 'ding': bell(t,1318,.16); break;
+    case 'fail': [392,370,349,311].forEach((f,i)=>osc('sawtooth',f,t+i*.32,i===3?.9:.28,.09,{filter:'lowpass',ff:1400,f2:i===3?290:undefined})); break;
     case 'thud': osc('sine',140,t,.12,.18,{f2:70}); noise(t,.06,.08,'lowpass',600); break;
     case 'spoil': osc('sine',300,t,.25,.07,{f2:120}); break;
     case 'hungry': osc('triangle',440,t,.15,.08); osc('triangle',330,t+.17,.25,.08); break;
@@ -520,8 +538,9 @@ const SONG=[0,1,0,2,4,3,1,2];
 const MODES={map:{bpm:68,drums:false},play:{bpm:92,drums:true},rush:{bpm:112,drums:true,roll:true}};
 const MUS={mode:'map',next:0,step:0,duck:1};
 const noteF=i=>{const base=[0,2,4,7,9], o=Math.floor(i/5), d=base[((i%5)+5)%5]; return 293.66*Math.pow(2,(d+12*o)/12);};
+function stopCustomMusic(){if(MUS.node){try{MUS.node.stop();}catch(e){} MUS.node=null; MUS.buf=null;}}
 function setMusic(mode){
-  if(MUS.mode===mode) return; MUS.mode=mode; MUS.step=0; MUS.duck=1;
+  if(MUS.mode===mode) return; stopCustomMusic(); MUS.mode=mode; MUS.step=0; MUS.duck=1;
   if(!AC) return; const t=AC.currentTime; MUS.next=t+.15;
   MUSBUS.gain.cancelScheduledValues(t); MUSBUS.gain.setValueAtTime(Math.max(.0001,MUSBUS.gain.value),t);
   if(mode) MUSBUS.gain.exponentialRampToValueAtTime(1,t+.5); else MUSBUS.gain.exponentialRampToValueAtTime(.0001,t+.35);
@@ -540,6 +559,8 @@ function playStep(M,step,t,spb){
 }
 function musicTick(){
   if(!AC||!MUS.mode||!SAVE.music||AC.state!=='running') return;
+  const cm=BUF['music:'+MUS.mode];
+  if(cm){if(MUS.buf!==cm){stopCustomMusic(); MUS.node=playBuf(cm,MUSBUS,.8); MUS.node.loop=true; MUS.buf=cm;} return;}
   const M=MODES[MUS.mode], spb=60/M.bpm/2;
   if(MUS.next<AC.currentTime-.3) MUS.next=AC.currentTime+.05;
   while(MUS.next<AC.currentTime+.25){playStep(M,MUS.step,MUS.next,spb); MUS.next+=spb; MUS.step=(MUS.step+1)%(16*SONG.length);}
@@ -991,9 +1012,10 @@ function update(dt){
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
   if(!G.animals.length&&!G.boats.length&&!G.trees.length&&!G.products.length&&!G.cages.length&&!storeUsed()&&!cargoUsed()&&G.truck.state==='home'){
     const cheapest=Math.min(...G.L.buy.map(k=>BUY[k].cost));
-    if(G.money<cheapest){G.money=cheapest; toast(`A neighbour lent you ₹${cheapest} to buy a new bird. Keep grass growing this time.`); sfx('cash');}
+    if(G.money<cheapest){failLevel('No birds left and no money to buy more. Keep grass growing so your birds don’t starve.'); return;}
   }
-  if(goalsMet()){G.state='won'; G.wonT=0; setMusic(null); sfx('win');}
+  if(goalsMet()){G.state='won'; G.wonT=0; setMusic(null); sfx('win'); return;}
+  if(G.t>=timeLimit(G.L)) failLevel('Time’s up. Finish the goals before the countdown reaches zero.');
 }
 function moveTo(o,tx,ty,sp,dt){
   const dx=tx-o.x, dy=ty-o.y, d=Math.hypot(dx,dy);
@@ -1033,11 +1055,10 @@ function makeJackal(x,y){return{id:++UID,x,y,dir:1,taps:0,need:G.hard?8:5,stun:0
 function spawnJackal(){
   const side=Math.random()<.5?-1:1, y=FY+40+Math.random()*(FH-80);
   const j=makeJackal(side<0?-24:W+24,y); j.dir=-side; G.jackals.push(j);
-  toast('A jackal is sneaking in. Tap it to trap it!'); sfx('howl');
+  toast('A jackal is sneaking in. Tap it to trap it!');
 }
 function spawnMonkey(){
   const side=Math.random()<.5?-1:1, y=FY+30+Math.random()*(FH-60);
-  sfx('chatter');
   G.monkeys.push({id:++UID,x:side<0?-20:W+20,y,dir:-side,taps:0,need:G.hard?5:3,stun:0,state:'seek',item:null,target:null,t:0,think:0,walk:0,mv:false,gone:false});
 }
 function fleeTo(o,sp,dt){const tx=o.x<W/2?-50:W+50; moveTo(o,tx,o.y,sp,dt); if(o.x<-40||o.x>W+40) o.gone=true;}
@@ -1049,7 +1070,7 @@ function updJackal(j,dt){
     if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if(a.enter||a.dead) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
     if(!j.target||j.t>24){j.state='flee'; return;}
     moveTo(j,j.target.x,j.target.y,G.hard?34:26,dt);
-    if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('squawk');
+    if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('attack');
       toast(`The jackal grabbed a ${ANIM[j.carry].name}. Tap it fast to make it let go!`);}
   }else fleeTo(j,j.carry?34:42,dt);
 }
@@ -1061,9 +1082,11 @@ function updMonkey(m,dt){
     if(m.think<=0||!m.target||!G.products.includes(m.target)){m.think=.4; let b=null,bd=1e9; for(const p of G.products){const d=dist(p.x,p.y,m.x,m.y); if(d<bd){bd=d;b=p;}} m.target=b;}
     if(!m.target){if(m.t>14) m.state='leave'; else moveTo(m,W/2,FY+FH/2,30,dt); return;}
     moveTo(m,m.target.x,m.target.y,G.hard?52:42,dt);
-    if(dist(m.x,m.y,m.target.x,m.target.y)<8){G.products.splice(G.products.indexOf(m.target),1); m.item=m.target.type; m.target=null; m.state='leave'; sfx('chatter');}
+    if(dist(m.x,m.y,m.target.x,m.target.y)<8){G.products.splice(G.products.indexOf(m.target),1); m.item=m.target.type; m.target=null; m.state='leave'; sfx('attack');}
   }else fleeTo(m,m.state==='scared'?85:50,dt);
 }
+const timeLimit=L=>Math.round(L.silver*(L.hard?1.5:2));
+function failLevel(reason){G.state='failed'; G.failReason=reason; G.wonT=0; setMusic(null); sfx('fail');}
 function goalsMet(){
   for(const [k,n] of Object.entries(G.L.goals)){if(k==='money'){if(G.money<n) return false;} else if((G.collected[k]||0)<n) return false;}
   return true;
@@ -1295,7 +1318,7 @@ function renderHUD(){
   const sig=G.money+'|'+goals.map(([k])=>G.collected[k]||0).join(',')+'|'+Math.floor(G.t)+'|'+G.state;
   if(sig===hudSig) return; hudSig=sig;
   $('#money').textContent='₹'+G.money.toLocaleString('en-IN');
-  $('#time').textContent=fmtT(G.t);
+  const left=Math.max(0,timeLimit(G.L)-G.t); $('#time').textContent=fmtT(Math.ceil(left)); $('#timer').classList.toggle('low',left<=30);
   $('#mdot').style.background=MEDAL_VAR[medalFor(G.L,G.t)];
   $('#goals').innerHTML=goals.map(([k,n])=>{
     const have=k==='money'?G.money:(G.collected[k]||0), done=have>=n;
@@ -1318,7 +1341,7 @@ function startLevel(i){
   $('#inGoals').innerHTML=Object.entries(G.L.goals).map(([k,n])=>k==='money'?`<li><img src="${ICON.money}" alt="">Have ₹${n.toLocaleString('en-IN')}</li>`:`<li><img src="${ICON[k]}" alt="">Collect ${n} ${plural(ITEMS[k].name.toLowerCase(),n)}</li>`).join('');
   $('#inTip').textContent=G.L.tip;
   $('#inStart').hidden=NET.role==='guest'; $('#inWait').hidden=NET.role!=='guest';
-  $('#inTimes').textContent=`Gold medal under ${fmtT(G.L.gold)}, silver under ${fmtT(G.L.silver)}.`;
+  $('#inTimes').textContent=`Gold medal under ${fmtT(G.L.gold)}, silver under ${fmtT(G.L.silver)}. Time limit ${fmtT(timeLimit(G.L))}.`;
   show('#ovIntro'); renderHUD(); fit();
 }
 function openMarket(){show('#ovMarket'); renderMarket(); NET.mkSig=marketSig();}
@@ -1377,7 +1400,8 @@ function showResult(){
   if(G.L.hard) coins=Math.round(coins*1.5);
   SAVE.stars[i]=Math.max(prev,m); SAVE.coins+=coins; SAVE.unlocked=Math.max(SAVE.unlocked,Math.min(LEVELS.length,i+2)); persist();
   $('#rsName').textContent=G.L.name;
-  const md=$('#rsMedal'); md.textContent=MEDAL_NAME[m]; md.style.background=MEDAL_VAR[m];
+  $('#rsEyebrow').textContent='Level complete'; $('#rsCoinPill').hidden=false; $('#rsReplay').textContent='Replay';
+  const md=$('#rsMedal'); md.textContent=MEDAL_NAME[m]; md.style.background=MEDAL_VAR[m]; md.style.color='';
   $('#rsTime').textContent='Time '+fmtT(G.t);
   $('#rsCoins').textContent=`+${coins} gold coins`;
   const last=i===LEVELS.length-1;
@@ -1387,6 +1411,15 @@ function showResult(){
   show('#ovResult'); sfx('ding');
 }
 $('#rsMap').onclick=()=>goMap();
+function showFail(){
+  $('#rsEyebrow').textContent='Level failed'; $('#rsName').textContent=G.L.name;
+  const md=$('#rsMedal'); md.textContent='Failed'; md.style.background='var(--laterite)'; md.style.color='var(--cream)';
+  $('#rsTime').textContent='Time '+fmtT(G.t); $('#rsCoinPill').hidden=true;
+  const g=NET.role==='guest';
+  $('#rsNote').textContent=(g?'Your friend decides whether to retry. ':'')+(G.failReason||'');
+  $('#rsReplay').textContent='Retry'; $('#rsNext').hidden=true; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
+  show('#ovResult');
+}
 $('#rsReplay').onclick=()=>startLevel(G.li);
 $('#rsNext').onclick=()=>startLevel(G.li+1);
 
@@ -1519,7 +1552,7 @@ function snap(){
     b:G.boats.map(b=>[b.id,r1(b.t),b.dur,b.cargo,b.spawned?1:0]),
     ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue]),
     tk:[T.state==='home'?0:1,r1(T.t),T.cargo,T.sold?1:0],
-    s:G.store,co:G.collected,ev:NET.ev.splice(0)};
+    s:G.store,co:G.collected,fr:G.failReason||'',ev:NET.ev.splice(0)};
 }
 function syncList(old,rows,make){
   const byId={}; old.forEach(o=>{byId[o.id]=o;});
@@ -1543,6 +1576,7 @@ function applySnap(d){
   G.store=d.s; G.collected=d.co;
   if(G.state==='intro'&&d.st==='play'){hide('#ovIntro'); G.state='play';}
   if(G.state==='play'&&(d.st==='won'||d.st==='done')){G.state='won'; G.wonT=0; setMusic(null);}
+  if(G.state==='play'&&(d.st==='failed'||d.st==='over')){G.state='failed'; G.failReason=d.fr; G.wonT=0; setMusic(null);}
   (d.ev||[]).forEach(e=>{
     if(e.s) playSfx(e.s);
     if(e.toast) showToast(e.toast);
@@ -1683,8 +1717,8 @@ function frame(ts){
   if(G){
     if(NET.role==='guest') guestTick(dt);
     else if(G.state==='play'&&(NET.role==='host'||!isPaused())) update(dt);
-    else if(G.state==='won'){G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d); G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);}
-    if(G.state==='won'){G.wonT+=dt; if(G.wonT>1.2&&$('#ovResult').hidden){G.state='done'; showResult();}}
+    else if(G.state==='won'||G.state==='failed'){G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d); G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);}
+    if(G.state==='won'||G.state==='failed'){G.wonT+=dt; if(G.wonT>1.2&&$('#ovResult').hidden){if(G.state==='won'){G.state='done'; showResult();} else{G.state='over'; showFail();}}}
     if(NET.role==='host'){NET.acc+=dt; if(NET.acc>=1/12){NET.acc=0; NET.send(snap());}}
     if(!$('#ovMarket').hidden){const sg=marketSig(); if(sg!==NET.mkSig){NET.mkSig=sg; renderMarket();}}
   }

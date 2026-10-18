@@ -2,7 +2,7 @@
 
 A Kerala farm game for the browser, in the spirit of Farm Frenzy.
 
-Grow grass from the well, raise hens and Kuttanad ducks, press coconut oil, fry banana chips, fend off jackals and monkeys, and send your auto-rickshaw to the market. Region 1 (Kuttanad backwaters) has 8 levels with gold, silver and bronze medals, plus upgrades.
+Grow grass from the well, raise hens and Kuttanad ducks, press coconut oil, fry banana chips, fend off jackals and monkeys, and send your auto-rickshaw to the market. Region 1 (Kuttanad backwaters) has 8 levels. Region 2 (Idukki high range) adds 6 more with jackfruit chips, tapioca, pigs and buffalo, a meat shop and a thattukada that cooks kappa and beef. Every level has gold, silver and bronze medals and a time limit, plus upgrades.
 
 **Play:** https://nmathewa.github.io/naadan_frenzy/
 

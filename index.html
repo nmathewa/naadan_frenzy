@@ -88,7 +88,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .pill{display:inline-flex;align-items:center;gap:6px;background:rgba(0,0,0,.25);color:#ffe39a;border-radius:20px;padding:3px 12px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
 .pill.light{background:rgba(58,36,20,.08);color:var(--ink)}
 .coin{width:14px;height:14px;border-radius:50%;background:var(--gold);box-shadow:inset 0 0 0 2px #b3861f}
-.region{margin:4px 20px 2px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--kasavu)}
+.region{position:relative;z-index:1;align-self:stretch;margin:10px 0 0;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--kasavu)}
 #levels{position:relative;display:flex;flex-direction:column;gap:10px;padding:10px 20px 18px}
 #levels::before{content:"";position:absolute;left:50%;top:18px;bottom:26px;width:10px;margin-left:-5px;border-radius:6px;background:#2b7c86;opacity:.55}
 .lvl{position:relative;display:flex;align-items:center;gap:10px;width:80%;border:0;border-radius:14px;padding:8px 12px 8px 8px;background:var(--cream);color:var(--ink);text-align:left;box-shadow:0 3px 0 #b5a277}
@@ -186,7 +186,6 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
       </div>
       <div class="coop-bar" id="coopBar" hidden><span id="coopText"></span><button class="sbtn alt" id="coopLeave">Leave</button></div>
       <div class="map-sound"><button class="chip" id="mapMusic" aria-pressed="true">Music on</button><button class="chip" id="mapSfx" aria-pressed="true">Sound effects on</button></div>
-      <p class="region">Region 1 · Kuttanad backwaters</p>
       <div id="levels"></div>
       <div class="map-foot">
         <span>Progress saves in this browser.</span>
@@ -215,6 +214,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
         <div id="mkRows"></div>
         <div class="kasavu"></div>
         <div class="phead"><h2 id="mkAutoName" style="font-size:19px">Auto-rickshaw</h2><span class="pill light" id="mkLoad"></span></div>
+        <button class="btn alt wide" id="mkUp" hidden></button>
         <div id="mkCargo"></div>
         <p class="note" id="mkStatus"></p>
         <div class="row-btns">
@@ -310,9 +310,11 @@ let S=1, DPR=1;
 
 // ---------- world layout ----------
 const FX=24, FY=134, CELL=31, COLS=12, ROWS=11, FW=COLS*CELL, FH=ROWS*CELL; // field 24..396, 134..475
-const WS_X=[72,210,348], WS_BY=118, WS_KEYS=['bakery','oilmill','chips'];
+const WS_BY=118, WS_KEYS=['bakery','oilmill','chips'];
+// workshop row: 3 buildings (Region 1) or 4 narrower ones (Region 2)
+const slotGeom=n=>n>3?{xs:[56,159,262,365],w:80}:{xs:[72,210,348],w:104};
 const WH={x:72,by:594,w:118}, WELL={x:210,by:590}, PARK={x:352,y:592}, JETTY=151;
-const TREE_SLOTS=[{x:FX+28,y:FY+72},{x:FX+FW-28,y:FY+72},{x:FX+28,y:FY+FH-12},{x:FX+FW-28,y:FY+FH-12}];
+const TREE_SLOTS=[{x:FX+28,y:FY+72},{x:FX+FW-28,y:FY+72},{x:FX+28,y:FY+FH-12},{x:FX+FW-28,y:FY+FH-12},{x:FX+28,y:FY+200},{x:FX+FW-28,y:FY+200}];
 
 // ---------- content ----------
 const ITEMS={
@@ -324,23 +326,43 @@ const ITEMS={
   banana:{name:'Banana',price:20},
   chips:{name:'Banana chips',price:200},
   jackal:{name:'Caged jackal',price:100},
+  jackfruit:{name:'Jackfruit',price:40},
+  jackchips:{name:'Jackfruit chips',price:260},
+  tapioca:{name:'Tapioca',price:25},
+  pork:{name:'Pork',price:110},
+  beef:{name:'Beef',price:150},
+  porkfry:{name:'Pork fry',price:320},
+  kappabeef:{name:'Kappa & beef',price:450},
 };
+const MASS=new Set(['coconut oil','tapioca','pork','beef','pork fry','kappa & beef']); // no plural 's'
 const BUY={
   hen:{name:'Hen',cost:100,kind:'animal'},
   duck:{name:'Duck',cost:250,kind:'animal'},
-  palm:{name:'Coconut palm',cost:300,kind:'tree'},
-  banana:{name:'Banana plant',cost:200,kind:'tree'},
+  palm:{name:'Coconut palm',short:'Palm',cost:300,kind:'tree'},
+  banana:{name:'Banana plant',short:'Banana',cost:200,kind:'tree'},
+  pig:{name:'Piglet',cost:150,kind:'animal'},
+  buffalo:{name:'Buffalo calf',short:'Buffalo',cost:300,kind:'animal'},
+  jack:{name:'Jackfruit tree',short:'Jackfruit',cost:350,kind:'tree'},
+  kappa:{name:'Tapioca',cost:120,kind:'tree'},
 };
 const ANIM={
   hen:{name:'hen',hunger:26,prod:9,speed:24,starve:14,out:'egg'},
   duck:{name:'duck',hunger:22,prod:12,speed:21,starve:14,out:'duckegg'},
+  // pigs and buffalo grow while fed; a grown one is sent to the meat shop
+  pig:{name:'pig',hunger:24,grow:18,speed:18,starve:16,meat:'pork'},
+  buffalo:{name:'buffalo',hunger:30,grow:26,speed:14,starve:18,meat:'beef'},
 };
-const TREE={palm:{out:'coconut',period:15},banana:{out:'banana',period:13}};
+const ANIM_TYPES=['hen','duck','pig','buffalo'];
+const TREE={palm:{out:'coconut',period:15},banana:{out:'banana',period:13},jack:{out:'jackfruit',period:20},kappa:{out:'tapioca',period:11}};
+const TREE_TYPES=['palm','banana','jack','kappa'];
 const WS={
   bakery:{name:'Bakery',sign:'BAKERY',cost:300,in:{egg:1},out:'puffs',time:6,wall:'#f4ecd8',pillar:'#3d6f8e'},
   oilmill:{name:'Oil mill',sign:'OIL MILL',cost:500,in:{coconut:1},out:'oil',time:8,wall:'#d08a5e',pillar:'#5b3a1f'},
-  chips:{name:'Chips shop',sign:'CHIPS SHOP',cost:700,in:{banana:1,oil:1},out:'chips',time:9,wall:'#efdfa4',pillar:'#2f6b3a'},
+  chips:{name:'Chips shop',sign:'CHIPS SHOP',cost:700,recipes:[{in:{banana:1,oil:1},out:'chips'},{in:{jackfruit:1,oil:1},out:'jackchips'}],time:9,wall:'#efdfa4',pillar:'#2f6b3a'},
+  meat:{name:'Meat shop',sign:'MEAT SHOP',cost:600,animal:true,recipes:[],icon:'pork',time:7,wall:'#f3e1da',pillar:'#8a2f2a'},
+  kada:{name:'Thattukada',sign:'THATTUKADA',cost:800,recipes:[{in:{tapioca:1,beef:1},out:'kappabeef'},{in:{pork:1,oil:1},out:'porkfry'}],time:10,wall:'#e8d2a0',pillar:'#2f5f8a'},
 };
+for(const k in WS){const d=WS[k]; if(!d.recipes) d.recipes=[{in:d.in,out:d.out}]; d.icon=d.icon||d.recipes[0].out;}
 const UPG={
   well:{name:'Deeper well',cap:[5,8,11,14],refill:[3,2.4,1.8,1.2],desc:l=>`${UPG.well.cap[l]} buckets of water, refills in ${UPG.well.refill[l]}s`},
   store:{name:'Bigger storehouse',cap:[12,18,24,30],desc:l=>`Stores ${UPG.store.cap[l]} items`},
@@ -363,9 +385,24 @@ const LEVELS=[
    tip:'Monkeys grab anything left lying on the ground. Tap a monkey a few times to chase it off, and it drops what it stole.'},
   {name:'Banana Chips',start:900,animals:{hen:2,duck:1},trees:['palm','palm'],buy:['hen','duck','palm','banana'],ws:['bakery','oilmill','chips'],built:['bakery','oilmill'],goals:{chips:4,money:2000},gold:165,silver:300,jackal:{first:40,every:50},monkey:{first:30,every:38},
    tip:'Plant banana trees. The chips shop fries a banana in coconut oil to make banana chips, the best seller at the market.'},
-  {name:'Onam Rush',start:1200,animals:{hen:2,duck:2},trees:['palm','banana'],buy:['hen','duck','palm','banana'],ws:['bakery','oilmill','chips'],built:['bakery','oilmill','chips'],goals:{chips:6,puffs:8,duckegg:10,money:3000},gold:210,silver:400,jackal:{first:30,every:40},monkey:{first:25,every:30},
+  {name:'Onam Rush',rush:true,start:1200,animals:{hen:2,duck:2},trees:['palm','banana'],buy:['hen','duck','palm','banana'],ws:['bakery','oilmill','chips'],built:['bakery','oilmill','chips'],goals:{chips:6,puffs:8,duckegg:10,money:3000},gold:210,silver:400,jackal:{first:30,every:40},monkey:{first:25,every:30},
    tip:'The whole village is shopping for the Onam feast. Keep every workshop busy and the auto on the road.'},
+  // Region 2: Idukki high range. Four workshops in the top row.
+  {region:2,name:'Jackfruit Season',start:900,animals:{hen:2},trees:['palm','jack'],buy:['hen','duck','palm','jack'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','chips'],built:['oilmill'],goals:{jackchips:4,money:1200},gold:220,silver:360,jackal:{first:40,every:50},
+   tip:'Jackfruit grows right on the trunk. Tap a tree to water it: a watered tree grows and fruits twice as fast for 20 seconds. The chips shop fries jackfruit in coconut oil.'},
+  {region:2,name:'Kappa Fields',start:600,animals:{hen:2,duck:1},trees:['kappa','palm'],buy:['hen','duck','kappa','palm'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','chips'],built:['oilmill','chips'],goals:{tapioca:12,money:1200},gold:200,silver:330,monkey:{first:30,every:40},
+   tip:'Tapioca, the Kerala staple, grows fast. Water the plants to double the harvest, and keep the monkeys off it.'},
+  {region:2,name:'Pig Farm',start:800,animals:{pig:2,hen:2},trees:['palm'],buy:['hen','pig','palm'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','meat'],built:['oilmill'],goals:{pork:6,money:1400},gold:230,silver:380,jackal:{first:40,every:50},
+   tip:'Piglets eat grass and grow up. When a pig shows a green tick, tap it to send it to the meat shop, which makes 3 portions of pork. Jackals leave pigs alone.'},
+  {region:2,name:'Buffalo Country',start:1100,animals:{buffalo:1,pig:1,hen:1},trees:['kappa','palm'],buy:['hen','pig','buffalo','kappa'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','meat','kada'],built:['oilmill','meat'],goals:{beef:6,kappabeef:4},gold:230,silver:380,monkey:{first:30,every:40},
+   tip:'Buffalo calves grow slowly but give beef. Build the thattukada: it cooks tapioca with beef into kappa and beef, the best dish in Kerala.'},
+  {region:2,name:'Thattukada Night',start:1200,animals:{pig:2,buffalo:1,hen:2},trees:['kappa','palm','palm'],buy:['hen','pig','buffalo','palm','kappa'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','meat','kada'],built:['oilmill','meat','kada'],goals:{kappabeef:5,porkfry:5,money:2500},gold:330,silver:520,jackal:{first:35,every:45},monkey:{first:30,every:36},
+   tip:'The thattukada also fries pork in coconut oil. Keep both dishes cooking for the night crowd.'},
+  {region:2,name:'Highrange Feast',rush:true,start:1500,animals:{hen:2,duck:1,pig:2,buffalo:1},trees:['palm','palm','jack','kappa'],buy:['hen','pig','buffalo','palm','jack','kappa'],slots:['oilmill','chips','meat','kada'],ws:['oilmill','chips','meat','kada'],built:['oilmill','chips','meat','kada'],goals:{jackchips:5,kappabeef:5,porkfry:5,money:3500},gold:420,silver:660,jackal:{first:30,every:40},monkey:{first:25,every:30},
+   tip:'The whole high range is coming to the feast. Run every kitchen at once.'},
 ];
+const REGIONS={1:'Region 1 · Kuttanad backwaters',2:'Region 2 · Idukki high range'};
+const regionOf=i=>LEVELS[i].region||1;
 
 // ---------- save ----------
 const SKEY='naadan-frenzy-save-v1';
@@ -377,8 +414,10 @@ function persist(){try{localStorage.setItem(SKEY,JSON.stringify(SAVE))}catch(e){
 let UPV=null; // in co-op the guest plays with the host's upgrades
 const UP=()=>UPV||SAVE.up;
 const wellCap=()=>UPG.well.cap[UP().well], wellRefill=()=>UPG.well.refill[UP().well];
-const storeCap=()=>UPG.store.cap[UP().store], autoCap=()=>UPG.auto.cap[UP().auto];
-const autoTrip=()=>UPG.auto.trip[UP().auto], wsMult=()=>UPG.ws.mult[UP().ws];
+// the auto-rickshaw can also be upgraded for one level from the market panel
+const autoLvl=()=>Math.min(3,UP().auto+((G&&G.autoBoost)||0)), AUTO_UP_COST=[0,400,900,1600];
+const storeCap=()=>UPG.store.cap[UP().store], autoCap=()=>UPG.auto.cap[autoLvl()];
+const autoTrip=()=>UPG.auto.trip[autoLvl()], wsMult=()=>UPG.ws.mult[UP().ws];
 
 // ---------- sound ----------
 // All audio is synthesised with Web Audio, so there are no sound files to load.
@@ -477,7 +516,7 @@ function horn(lvl,t,short){
 }
 // two-stroke "tuk-tuk" pulse, pitched high enough for phone speakers; trailers rattle
 function enginePulse(v){
-  if(!SAVE.sfx||!audio()) return; const t=AC.currentTime+.01, lvl=UP().auto, f=95+lvl*8;
+  if(!SAVE.sfx||!audio()) return; const t=AC.currentTime+.01, lvl=autoLvl(), f=95+lvl*8;
   osc('square',f,t,.045,.1*v,{filter:'bandpass',ff:700,q:1.2});
   osc('sawtooth',f*2,t,.03,.045*v,{filter:'lowpass',ff:1600});
   noise(t,.03,.07*v,'bandpass',1100,1.5);
@@ -491,7 +530,15 @@ function paddle(v){
 }
 const SFX_GAP={attack:2.5,pop:.03,click:.05,water:.08,cluck:.25,quack:.25,spoil:.3,thud:.2,ding:.15,hungry:1.5,err:.15,chatter:.4};
 const lastSfx={};
-function sfx(n){playSfx(n); if(NET.role==='host'&&n!=='click') NET.ev.push({s:n});}
+// Who caused the current action in co-op: 'local' (this phone), 'remote' (the guest) or null (the game itself).
+// Warnings and the error buzz go only to the player who caused them.
+let ACTOR=null;
+function asActor(a,fn){const prev=ACTOR; ACTOR=a; try{return fn();}finally{ACTOR=prev;}}
+function sfx(n){
+  const personal=n==='err';
+  if(!(personal&&ACTOR==='remote')) playSfx(n);
+  if(NET.role==='host'&&n!=='click'&&!(personal&&ACTOR==='local')) NET.ev.push({s:n});
+}
 function playSfx(n){
   if(!SAVE.sfx) return; const a=audio(); if(!a) return; const t=a.currentTime+.01;
   if(lastSfx[n]!==undefined&&t-lastSfx[n]<(SFX_GAP[n]||0)) return; lastSfx[n]=t;
@@ -517,9 +564,9 @@ function playSfx(n){
       const l=AC.createOscillator(), lg=AC.createGain(); l.frequency.value=6; lg.gain.value=10; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t+1.6);
       break;}
     case 'chatter': for(let i=0;i<6;i++) osc('square',1200+Math.random()*500,t+i*.07,.045,.05,{f2:900,filter:'bandpass',ff:2200,q:3}); break;
-    case 'depart': [0,.09,.14,.26,.31].forEach((d,i)=>osc('square',80+i*12,t+d,.05,.09,{filter:'bandpass',ff:650,q:1.2})); noise(t,.3,.05,'bandpass',900,1); horn(UP().auto,t+.4,false); break;
-    case 'arrive': noise(t,.22,.05,'bandpass',3200,8); horn(UP().auto,t+.2,true); break;
-    case 'honk': horn(UP().auto,t,true); break;
+    case 'depart': [0,.09,.14,.26,.31].forEach((d,i)=>osc('square',80+i*12,t+d,.05,.09,{filter:'bandpass',ff:650,q:1.2})); noise(t,.3,.05,'bandpass',900,1); horn(autoLvl(),t+.4,false); break;
+    case 'arrive': noise(t,.22,.05,'bandpass',3200,8); horn(autoLvl(),t+.2,true); break;
+    case 'honk': horn(autoLvl(),t,true); break;
     case 'load': osc('sine',190,t,.1,.22,{f2:90}); noise(t,.06,.12,'lowpass',700); break;
     case 'ding': bell(t,1318,.16); break;
     case 'eaten':
@@ -617,6 +664,30 @@ function drawItem(g,type,x,y,s){
     case 'chips':
       [[-4.5,2.5],[4.5,2.5],[0,-3]].forEach(p=>{g.fillStyle='#f3cc4a'; ell(g,p[0],p[1],5.2,4.6); g.fill(); g.strokeStyle='#c99420'; g.lineWidth=1; g.stroke();
         g.fillStyle='#d9a72a'; ell(g,p[0]+1,p[1]-.5,.8,.8); g.fill(); ell(g,p[0]-1.4,p[1]+1,.7,.7); g.fill();}); break;
+    case 'jackfruit':
+      g.fillStyle='#a3b53e'; ell(g,0,1,6.5,8); g.fill(); g.strokeStyle='#76852c'; g.lineWidth=1; g.stroke();
+      g.fillStyle='#7d8a2e'; for(let k=0;k<9;k++){ell(g,-3.5+(k%3)*3.5,-4+Math.floor(k/3)*4,.8,.8); g.fill();}
+      g.strokeStyle='#5b4a2a'; g.lineWidth=1.4; g.beginPath(); g.moveTo(0,-7); g.lineTo(2,-10); g.stroke(); break;
+    case 'jackchips':
+      [[-4,-3,-.5],[3,-2,.4],[-1,3,.1]].forEach(([cx,cy,r])=>{g.save(); g.translate(cx,cy); g.rotate(r); g.fillStyle='#e9b93a'; rr(g,-6,-2.2,12,4.4,2); g.fill(); g.strokeStyle='#b8861e'; g.lineWidth=.9; g.stroke(); g.restore();}); break;
+    case 'tapioca':
+      [[-2,0,-.5],[3,1,-.2]].forEach(([cx,cy,r])=>{g.save(); g.translate(cx,cy); g.rotate(r); g.fillStyle='#7a4a2a'; ell(g,0,0,3,8); g.fill();
+        g.fillStyle='#f3eadb'; ell(g,0,-7,2.2,1.4); g.fill(); g.restore();}); break;
+    case 'pork':
+      g.fillStyle='#e79a95'; rr(g,-8,-5,16,10,3); g.fill(); g.strokeStyle='#c46f6a'; g.lineWidth=1; g.stroke();
+      g.fillStyle='#fbe7e3'; g.fillRect(-8,-2,16,2.2); break;
+    case 'beef':
+      g.fillStyle='#a8362f'; rr(g,-8,-5,16,10,3); g.fill(); g.strokeStyle='#7e2420'; g.lineWidth=1; g.stroke();
+      g.strokeStyle='#e3a7a0'; g.lineWidth=.8; g.beginPath(); g.moveTo(-6,-2); g.quadraticCurveTo(0,1,5,-3); g.moveTo(-4,3); g.quadraticCurveTo(1,1,6,2); g.stroke(); break;
+    case 'porkfry':
+      g.fillStyle='#3f8a34'; ell(g,0,1,9,5.5); g.fill();
+      g.fillStyle='#7a3f1d'; [[-4,0],[0,-2],[3,1],[-1,2.5],[5,-1]].forEach(([a,b])=>{rr(g,a-2,b-1.8,4,3.6,1); g.fill();});
+      g.fillStyle='#2f6b2a'; ell(g,-5,-2,1.6,.8); g.fill(); break;
+    case 'kappabeef':
+      g.fillStyle='#fbf8f2'; ell(g,0,1,9.5,6); g.fill(); g.strokeStyle='#c9c2b2'; g.lineWidth=1; g.stroke();
+      g.fillStyle='#efd27a'; ell(g,-3,1,4.5,3.5); g.fill();
+      g.fillStyle='#6e3216'; [[3,-1],[5,2],[2,2.5]].forEach(([a,b])=>{ell(g,a,b,1.8,1.5); g.fill();});
+      g.fillStyle='#2f6b2a'; ell(g,0,-2.5,1.6,.7,.4); g.fill(); break;
     case 'jackal':
       g.fillStyle='#b9945f'; ell(g,0,1,6,4); g.fill();
       g.strokeStyle='#8a6232'; g.lineWidth=1.6; for(let i=-6;i<=6;i+=3){g.beginPath(); g.moveTo(i,-6); g.lineTo(i,6); g.stroke();}
@@ -734,6 +805,83 @@ function drawBanana(g,x,y,grow,t,ripe){
 }
 
 // Kerala building: laterite plinth, pillared verandah, terracotta hip roof, carved mukhappu gable with a brass finial
+function drawPig(g,x,y,dir,t,mv,s){
+  g.save(); g.translate(x,y); g.scale(dir*s,s);
+  const b=mv?Math.abs(Math.sin(t*10))*1.2:0, sw=mv?Math.sin(t*12)*1.5:0;
+  g.fillStyle='rgba(30,20,5,.2)'; ell(g,0,6,13,3.2); g.fill();
+  g.fillStyle='#d98a8a'; [[-8,sw],[-3,-sw],[4,-sw],[8,sw]].forEach(l=>g.fillRect(l[0]+l[1]*.3-1.3,0,2.6,7));
+  g.translate(0,-b);
+  g.strokeStyle='#e08b8b'; g.lineWidth=1.6; g.beginPath(); g.arc(-14,-6,2.4,0,Math.PI*1.6); g.stroke();
+  g.fillStyle='#f2a5a5'; ell(g,0,-3,13,8.5); g.fill();
+  g.fillStyle='#f7c3c1'; ell(g,1,1,9,3.6); g.fill();
+  g.fillStyle='#f2a5a5'; ell(g,11,-6,6.5,6); g.fill();
+  g.fillStyle='#e08b8b'; tri(g,8,-10,9.5,-16,13,-10.5); g.fill();
+  g.fillStyle='#e98f8f'; ell(g,17,-4.5,3.2,2.7); g.fill();
+  g.fillStyle='#a65555'; ell(g,16.3,-4.5,.7,.9); g.fill(); ell(g,18,-4.5,.7,.9); g.fill();
+  g.fillStyle='#1d1d1d'; ell(g,13,-7.5,.9,.9); g.fill();
+  g.restore();
+}
+function drawBuffalo(g,x,y,dir,t,mv,s){
+  g.save(); g.translate(x,y); g.scale(dir*s,s);
+  const b=mv?Math.abs(Math.sin(t*8))*1:0, sw=mv?Math.sin(t*9)*1.6:0;
+  g.fillStyle='rgba(30,20,5,.22)'; ell(g,0,7,17,3.6); g.fill();
+  g.fillStyle='#2b2828'; [[-11,sw],[-6,-sw],[6,-sw],[11,sw]].forEach(l=>g.fillRect(l[0]+l[1]*.3-1.8,-1,3.6,8.5));
+  g.translate(0,-b);
+  g.strokeStyle='#2b2828'; g.lineWidth=1.4; g.beginPath(); g.moveTo(-15,-9); g.quadraticCurveTo(-19,-3,-17,3); g.stroke();
+  g.fillStyle='#1d1b1b'; ell(g,-17,3.5,1.6,2.2); g.fill();
+  g.fillStyle='#3d3a3a'; ell(g,0,-7,16,9.5); g.fill();
+  g.fillStyle='#4a4646'; ell(g,-2,-10,10,3.5); g.fill();
+  g.fillStyle='#3d3a3a'; ell(g,15,-8,6.5,7); g.fill();
+  g.fillStyle='#625c5a'; ell(g,19.5,-4,3.6,3.2); g.fill();
+  g.strokeStyle='#d8cfb8'; g.lineWidth=2.4; g.lineCap='round';
+  g.beginPath(); g.moveTo(13,-14); g.quadraticCurveTo(9,-21,3,-17); g.moveTo(16,-14); g.quadraticCurveTo(15,-22,9,-21); g.stroke();
+  g.fillStyle='#2b2828'; ell(g,11,-12,3,1.6,-.5); g.fill();
+  g.fillStyle='#e8e2d6'; ell(g,16.5,-9.5,1,1); g.fill(); g.fillStyle='#111'; ell(g,16.7,-9.5,.55,.55); g.fill();
+  g.restore();
+}
+function drawJack(g,x,y,grow,t,ripe){
+  g.save(); g.translate(x,y); const s=.35+.65*grow; g.scale(s,s);
+  g.fillStyle='rgba(30,20,5,.2)'; ell(g,0,2,20,5); g.fill();
+  g.fillStyle='#6e4f33'; g.beginPath(); g.moveTo(-6,0); g.lineTo(-4,-42); g.lineTo(4,-42); g.lineTo(6,0); g.closePath(); g.fill();
+  g.strokeStyle='#6e4f33'; g.lineWidth=3; g.beginPath(); g.moveTo(0,-34); g.lineTo(-12,-46); g.moveTo(0,-38); g.lineTo(11,-48); g.stroke();
+  const sway=Math.sin(t*1.2)*1.2;
+  [['#2f6b2f',-12,-50,14,11],['#2f6b2f',12,-52,14,11],['#3b7d38',0,-58,17,13],['#4a8f42',-6,-62,10,8],['#3b7d38',8,-45,10,8],['#2f6b2f',-14,-42,9,7]]
+    .forEach(([c,cx,cy,rx,ry])=>{g.fillStyle=c; ell(g,cx+sway,cy,rx,ry); g.fill();});
+  if(grow>=1){
+    const n=1+Math.floor(Math.min(.99,ripe)*3);
+    [[-7,-16],[7,-24],[-2,-30]].slice(0,n).forEach(([fx2,fy])=>{
+      g.fillStyle='#9fb23a'; ell(g,fx2,fy,5,7.5); g.fill();
+      g.fillStyle='#7b8a2b'; for(let k=0;k<6;k++){ell(g,fx2-2.5+(k%2)*5,fy-5+Math.floor(k/2)*4.5,.8,.8); g.fill();}
+      g.strokeStyle='#5b4a2a'; g.lineWidth=1; g.beginPath(); g.moveTo(fx2,fy-7.5); g.lineTo(fx2+(fx2<0?3:-3),fy-10); g.stroke();
+    });
+  }
+  g.restore();
+}
+function drawKappa(g,x,y,grow,t){
+  g.save(); g.translate(x,y); const s=.4+.6*grow; g.scale(s,s);
+  g.fillStyle='rgba(30,20,5,.18)'; ell(g,0,2,14,4); g.fill();
+  g.fillStyle='#a4774a'; ell(g,0,0,11,3.6); g.fill();
+  const sway=Math.sin(t*1.5)*1.5;
+  [[-8,-30],[1,-38],[9,-28]].forEach(([sx,sy],i)=>{
+    g.strokeStyle='#9a3b3b'; g.lineWidth=1.6; g.beginPath(); g.moveTo(0,-1); g.quadraticCurveTo(sx*.4,sy*.5,sx+sway,sy); g.stroke();
+    for(let k=0;k<7;k++){const a=-Math.PI/2+(k-3)*.42; g.fillStyle=k%2?'#4f8f33':'#5fa43e';
+      g.save(); g.translate(sx+sway,sy); g.rotate(a); ell(g,0,-8,1.9,8); g.fill(); g.restore();}
+  });
+  g.restore();
+}
+function drawTree(g,tr,t){
+  const tt=t+tr.slot, ripe=tr.t/TREE[tr.type].period;
+  if(tr.wet>0){g.fillStyle='rgba(60,105,150,.28)'; ell(g,tr.x,tr.y+2,18,5); g.fill();}
+  if(tr.type==='palm') drawPalm(g,tr.x,tr.y,tr.g,tt);
+  else if(tr.type==='banana') drawBanana(g,tr.x,tr.y,tr.g,tt,ripe);
+  else if(tr.type==='jack') drawJack(g,tr.x,tr.y,tr.g,tt,ripe);
+  else drawKappa(g,tr.x,tr.y,tr.g,tt);
+  if(tr.wet>0){ // watered: a drop with the time left as a ring
+    const dx=tr.x+14, dy=tr.y-30+Math.sin(t*4)*1.5;
+    g.strokeStyle='rgba(255,255,255,.85)'; g.lineWidth=2; g.beginPath(); g.arc(dx,dy,7,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,tr.wet/20)); g.stroke();
+    g.beginPath(); g.moveTo(dx,dy-4.5); g.quadraticCurveTo(dx+3.6,dy+.6,dx,dy+3); g.quadraticCurveTo(dx-3.6,dy+.6,dx,dy-4.5); g.fillStyle='#3aa6c2'; g.fill();
+  }
+}
 function drawKB(g,cx,by,w,o){
   const h=o.h||48, rh=o.roofH||26, L=cx-w/2, R=cx+w/2;
   g.fillStyle='rgba(40,25,10,.22)'; ell(g,cx,by+1,w/2+12,6); g.fill();
@@ -767,7 +915,7 @@ function drawKB(g,cx,by,w,o){
   g.moveTo(cx-gw/2+4,gb-4); g.lineTo(cx+gw/2-4,gb-4); g.stroke();
   g.fillStyle='#e0b23e'; g.fillRect(cx-.8,gt-9,1.6,7); ell(g,cx,gt-9.5,2.2,2.7); g.fill();
   if(o.sign){
-    g.font='800 11px '+FONT; const tw=Math.max(40,g.measureText(o.sign).width+12);
+    g.font=(w<90?'800 9.5px ':'800 11px ')+FONT; const tw=Math.min(w+8,Math.max(40,g.measureText(o.sign).width+12));
     g.fillStyle='#f6ecd0'; rr(g,cx-tw/2,wt+4,tw,16,3); g.fill(); g.strokeStyle='#7a4a22'; g.lineWidth=1; g.stroke();
     g.fillStyle='#3a2414'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(o.sign,cx,wt+12.5);
   }
@@ -779,11 +927,20 @@ function drawKBCached(g,key,cx,by,w,o){
     const cg=c.getContext('2d'); cg.setTransform(k,0,0,k,(w/2+pad)*k,top*k); drawKB(cg,0,0,w,o);}
   g.setTransform(1,0,0,1,0,0); g.drawImage(c,Math.round((cx-w/2-pad)*k),Math.round((by-top)*k)); g.setTransform(k,0,0,k,0,0);
 }
+const WS_EXTRA_R2={
+  meat:(g,cx,by,w,wt)=>{for(let x=cx-w/2;x<cx+w/2;x+=8){g.fillStyle=((x-cx)/8|0)%2?'#c8352c':'#fbf3ee'; g.fillRect(x,wt+18,Math.min(8,cx+w/2-x),5);}
+    const sx=cx+w/2-13; g.strokeStyle='#6b6b6b'; g.lineWidth=1; g.beginPath(); g.moveTo(sx,wt+23); g.lineTo(sx,by-24); g.stroke();
+    g.fillStyle='#9aa3a8'; ell(g,sx,by-22,5,1.6); g.fill();},
+  kada:(g,cx,by,w)=>{const kx=cx+w/2-13; g.fillStyle='#8a3a1c'; g.fillRect(kx-6,by-14,12,5);
+    g.fillStyle='#b9c2c6'; rr(g,kx-5,by-22,10,8,3); g.fill(); g.fillRect(kx+4,by-20,4,1.5);
+    g.fillStyle='#6b4423'; g.fillRect(cx-w/2+3,by-15,16,3); g.fillRect(cx-w/2+4,by-12,2,4); g.fillRect(cx-w/2+16,by-12,2,4);},
+};
 const WS_EXTRA={
   bakery:(g,cx,by,w)=>{const x=cx-w/2+7; g.fillStyle='#7a4a22'; g.fillRect(x,by-22,23,13);
     for(let i=0;i<3;i++){g.fillStyle='rgba(205,232,238,.9)'; rr(g,x+1+i*7.5,by-31,6.5,10,2); g.fill(); g.fillStyle=['#e6a743','#d8352a','#f2c230'][i]; g.fillRect(x+2.2+i*7.5,by-27,4,5);}},
   oilmill:(g,cx,by,w)=>{const x=cx+w/2-26; for(let i=0;i<2;i++){g.fillStyle='#d9b54a'; rr(g,x+i*10,by-25,9,15,1.5); g.fill(); g.fillStyle='#a8822a'; g.fillRect(x+i*10,by-21,9,2);}
     g.fillStyle='#6b4423'; g.fillRect(cx-w/2+8,by-30,6,21); g.fillStyle='#4b2c16'; ell(g,cx-w/2+11,by-10,9,3); g.fill();},
+  ...WS_EXTRA_R2,
   chips:(g,cx,by,w,wt)=>{const bx=cx-w/2+13; g.strokeStyle='#6b4a1f'; g.lineWidth=1; g.beginPath(); g.moveTo(bx,wt+4); g.lineTo(bx,wt+12); g.stroke();
     for(let i=0;i<7;i++){g.fillStyle=i%2?'#e3c13a':'#c9c43a'; ell(g,bx+(i%2?3:-3),wt+13+i*3,3.4,2,i%2?.5:-.5); g.fill();}
     const ux=cx+w/2-17; g.fillStyle='#8a3a1c'; g.fillRect(ux-8,by-13,16,4); g.fillStyle='#3a3530'; ell(g,ux,by-15,12,5); g.fill(); g.fillStyle='#e9c14a'; ell(g,ux,by-17,9,2.4); g.fill();},
@@ -940,10 +1097,11 @@ function newGame(li){
   const L=(coop()||BOT.armed)?hardLevel(LEVELS[li],li):LEVELS[li];
   G={li,L,money:L.start,t:0,state:'intro',grass:new Float32Array(COLS*ROWS),gT:new Float32Array(COLS*ROWS),
     animals:[],trees:[],products:[],jackals:[],monkeys:[],cages:[],boats:[],fx:[],floats:[],
-    store:{},collected:{},ws:[null,null,null],water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
+    store:{},collected:{},ws:[],autoBoost:0,water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
     nextJ:L.jackal?L.jackal.first:Infinity,nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
   G.hard=!!L.hard;
-  WS_KEYS.forEach((k,i)=>{if(L.ws&&L.ws.includes(k)) G.ws[i]={type:k,built:!!(L.built&&L.built.includes(k)),busy:false,t:0,dur:1,queue:0};});
+  G.slots=L.slots||WS_KEYS; const sg=slotGeom(G.slots.length); G.wsX=sg.xs; G.wsW=sg.w;
+  G.ws=G.slots.map(k=>L.ws&&L.ws.includes(k)?{type:k,built:!!(L.built&&L.built.includes(k)),busy:false,t:0,dur:1,queue:0,jobs:[],cur:null}:null);
   for(const k in (L.animals||{})) for(let i=0;i<L.animals[k];i++){const p=randField(30); addAnimal(k,p.x,p.y,false);}
   (L.trees||[]).forEach(k=>addTree(k,true));
   for(let n=0;n<2;n++){const c=2+Math.floor(Math.random()*8), r=2+Math.floor(Math.random()*7);
@@ -955,9 +1113,9 @@ function addAnimal(type,x,y,enter){
     starve:0,think:0,eating:false,cell:-1,wait:0,enter:!!enter,walk:Math.random()*5,mv:false,dead:false});
 }
 function addTree(k,instant){
-  const used=G.trees.map(t=>t.slot); const slot=[0,1,2,3].find(i=>!used.includes(i)); if(slot===undefined) return false;
+  const used=G.trees.map(t=>t.slot); const slot=TREE_SLOTS.findIndex((_,i)=>!used.includes(i)); if(slot<0) return false;
   const s=TREE_SLOTS[slot];
-  G.trees.push({type:k,slot,x:s.x,y:s.y,g:instant?1:0,t:Math.random()*TREE[k].period*.5});
+  G.trees.push({type:k,slot,x:s.x,y:s.y,g:instant?1:0,t:Math.random()*TREE[k].period*.5,wet:0});
   if(!instant) fx('dust',s.x,s.y);
   return true;
 }
@@ -990,16 +1148,18 @@ function update(dt){
   G.animals.forEach(a=>updAnimal(a,dt));
   G.animals=G.animals.filter(a=>!a.dead);
   G.trees.forEach(tr=>{
-    if(tr.g<1){tr.g=Math.min(1,tr.g+dt/5); return;}
-    tr.t+=dt; const per=TREE[tr.type].period;
+    const rate=tr.wet>0?2:1; tr.wet=Math.max(0,(tr.wet||0)-dt);
+    if(tr.g<1){tr.g=Math.min(1,tr.g+dt/5*rate); return;}
+    tr.t+=dt*rate; const per=TREE[tr.type].period;
     if(tr.t>=per){tr.t=0; dropProduct(TREE[tr.type].out,tr.x+rnd(-16,16),tr.y+rnd(4,12),18); sfx('thud');}
   });
   G.products.forEach(p=>{p.age+=dt; p.life-=dt;});
   const np=G.products.length; G.products=G.products.filter(p=>p.life>0); if(G.products.length<np) sfx('spoil');
   G.ws.forEach((w,i)=>{
     if(!w||!w.busy) return; w.t+=dt;
-    if(w.t>=w.dur){dropProduct(WS[w.type].out,WS_X[i]+rnd(-22,22),FY+6,25); fx('puff',WS_X[i],WS_BY-10); sfx('ding');
-      if(w.queue>0){w.queue--; w.t=0;} else w.busy=false;}
+    if(w.t>=w.dur){const j=w.cur||{out:WS[w.type].icon,n:1}; for(let k=0;k<j.n;k++) dropProduct(j.out,G.wsX[i]+rnd(-22,22),FY+6+k*5,25);
+      fx('puff',G.wsX[i],WS_BY-10); sfx('ding');
+      if(w.jobs.length){w.cur=w.jobs.shift(); w.t=0;} else{w.busy=false; w.cur=null;} w.queue=w.jobs.length;}
   });
   const T=G.truck;
   if(T.state==='going'){
@@ -1011,7 +1171,7 @@ function update(dt){
   G.boats.forEach(b=>{b.t+=dt; boatPulse(b,dt); if(!b.spawned&&b.t/b.dur>=.4){b.spawned=true; addAnimal(b.cargo,JETTY,598,true); fx('dust',JETTY,598); sfx('splash');}});
   G.boats=G.boats.filter(b=>b.t<b.dur);
   // predators
-  if(G.L.jackal){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter)) spawnJackal();}}
+  if(G.L.jackal){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter&&!ANIM[a.type].meat)) spawnJackal();}}
   if(G.L.monkey){G.nextM-=dt; if(G.nextM<=0){G.nextM=G.L.monkey.every*rnd(.8,1.2); spawnMonkey();}}
   G.jackals.forEach(j=>updJackal(j,dt)); G.jackals=G.jackals.filter(j=>!j.gone);
   G.monkeys.forEach(m=>updMonkey(m,dt)); G.monkeys=G.monkeys.filter(m=>!m.gone);
@@ -1019,11 +1179,11 @@ function update(dt){
   G.cages=G.cages.filter(c=>!c.gone);
   G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d);
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
-  if(!G.animals.length&&!G.boats.length&&!G.jackals.some(j=>j.carry)&&!G.trees.length&&!G.products.length&&!G.cages.length&&!storeUsed()&&!cargoUsed()&&G.truck.state==='home'){
+  if(!G.animals.length&&!G.boats.length&&!G.jackals.some(j=>j.carry)&&!G.ws.some(w=>w&&w.busy)&&!G.trees.length&&!G.products.length&&!G.cages.length&&!storeUsed()&&!cargoUsed()&&G.truck.state==='home'){
     const cheapest=Math.min(...G.L.buy.map(k=>BUY[k].cost));
     if(G.money<cheapest){
       if(G.lastLoss==='jackal') failLevel('A jackal ran off with your last bird and there’s no money for another. Tap jackals fast to make them let go.','eaten');
-      else failLevel('No birds left and no money to buy more. Keep grass growing so your birds don’t starve.');
+      else failLevel('No animals left and no money to buy more. Keep grass growing so your animals don’t starve.');
       return;}
   }
   if(goalsMet()){G.state='won'; G.wonT=0; setMusic(null); sfx('win'); return;}
@@ -1047,7 +1207,9 @@ function updAnimal(a,dt){
   if(a.food<=0){a.food=0; a.starve+=dt; if(!a.warned){a.warned=true; sfx('hungry');}
     if(a.starve>=st.starve){a.dead=true; G.lastLoss='starve'; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
   else{a.starve=0; if(a.food>.3) a.warned=false;}
-  if(a.food>0){a.prod+=dt/st.prod; if(a.prod>=1){a.prod=0; dropProduct(st.out,a.x-a.dir*6,a.y+4,15); sfx(a.type==='hen'?'cluck':'quack');}}
+  if(a.food>0&&st.out){a.prod+=dt/st.prod; if(a.prod>=1){a.prod=0; dropProduct(st.out,a.x-a.dir*6,a.y+4,15); sfx(a.type==='hen'?'cluck':'quack');}}
+  if(a.food>0&&st.meat&&!a.ready){a.prod+=dt/st.grow; if(a.prod>=1){a.prod=1; a.ready=true; sfx('grow');
+    if(!G.meatTold){G.meatTold=true; toast(`Your ${st.name} is grown. Tap it to send it to the meat shop.`);}}}
   if(a.enter){if(moveTo(a,a.tx,a.ty,st.speed*1.4,dt)) a.enter=false; return;}
   if(a.eating){
     const i=a.cell;
@@ -1079,7 +1241,7 @@ function updJackal(j,dt){
   j.t+=dt;
   if(j.state==='hunt'){
     j.think-=dt;
-    if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if(a.enter||a.dead) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
+    if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if(a.enter||a.dead||ANIM[a.type].meat) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
     if(!j.target||j.t>24){j.state='flee'; return;}
     moveTo(j,j.target.x,j.target.y,G.hard?34:26,dt);
     if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('attack');
@@ -1115,7 +1277,9 @@ function onTap(x,y,remote){
   let best=null,bd=24; for(const p of G.products){const d=dist(p.x,p.y-3,x,y); if(d<bd){bd=d;best=p;}}
   if(best){collect(best); return;}
   for(const c of G.cages) if(dist(c.x,c.y-10,x,y)<24){collectCage(c); return;}
-  for(let i=0;i<3;i++) if(G.ws[i]&&Math.abs(x-WS_X[i])<58&&y>8&&y<WS_BY+8){tapWorkshop(i); return;}
+  for(const a of G.animals) if(ANIM[a.type].meat&&!a.enter&&dist(a.x,a.y-8,x,y)<20){tapMeatAnimal(a); return;}
+  for(const tr of G.trees) if(Math.abs(x-tr.x)<18&&y>tr.y-56*(.35+.65*tr.g)&&y<tr.y+8){waterTree(tr); return;}
+  for(let i=0;i<G.ws.length;i++) if(G.ws[i]&&Math.abs(x-G.wsX[i])<G.wsW/2+6&&y>8&&y<WS_BY+8){tapWorkshop(i); return;}
   if(dist(x,y,WELL.x,WELL.by-46)<48){tapWell(); return;}
   if(mk){if(!remote){if(x>266&&G.truck.state==='home') playSfx('honk'); openMarket();} return;}
   if(x>=FX&&x<FX+FW&&y>=FY&&y<FY+FH) plantAt(x,y);
@@ -1144,16 +1308,44 @@ function tapWorkshop(i){
   const w=G.ws[i], d=WS[w.type];
   if(!w.built){
     if(G.money>=d.cost&&w.armed!==true){w.armed=true; clearTimeout(w.armT); w.armT=setTimeout(()=>{w.armed=false;},3000); toast(`Tap again to build the ${d.name} for ₹${d.cost}.`); sfx('pop'); return;}
-    if(G.money>=d.cost){w.armed=false; G.money-=d.cost; w.built=true; sfx('build'); fx('dust',WS_X[i],WS_BY-10); toast(`The ${d.name} is open. Tap it to start work.`);}
+    if(G.money>=d.cost){w.armed=false; G.money-=d.cost; w.built=true; sfx('build'); fx('dust',G.wsX[i],WS_BY-10); toast(`The ${d.name} is open. Tap it to start work.`);}
     else{toast(`Building the ${d.name} costs ₹${d.cost}.`); sfx('err');}
     return;
   }
-  if(w.busy&&w.queue>=3){toast('That queue is full.'); return;}
-  const missing=Object.entries(d.in).filter(([k,n])=>(G.store[k]||0)<n);
-  if(missing.length){toast(`The ${d.name} needs ${missing.map(([k])=>ITEMS[k].name.toLowerCase()).join(' and ')} from the storehouse.`); sfx('err'); return;}
-  for(const [k,n] of Object.entries(d.in)) G.store[k]-=n;
-  if(w.busy) w.queue++; else{w.busy=true; w.t=0;}
-  w.dur=d.time*wsMult(); sfx('pop');
+  if(d.animal){toast('Tap a grown pig or buffalo (green tick) to send it to the meat shop.'); return;}
+  if(w.busy&&w.jobs.length>=3){toast('That queue is full.'); return;}
+  const r=pickRecipe(d);
+  if(!r){toast(`The ${d.name} needs ${d.recipes.map(r=>Object.keys(r.in).map(k=>ITEMS[k].name.toLowerCase()).join(' + ')).join(', or ')} from the storehouse.`); sfx('err'); return;}
+  for(const [k,n] of Object.entries(r.in)) G.store[k]-=n;
+  enqueueJob(w,{out:r.out,n:1}); sfx('pop');
+}
+// how much the farm still needs an item: 2 = a goal, 1 = an ingredient for a goal dish
+function needOf(k){
+  const goal=G.L.goals[k]; if(goal&&(G.collected[k]||0)<goal) return 2;
+  return G.ws.some(w=>w&&w.built&&WS[w.type].recipes.some(r=>r.in[k]&&G.L.goals[r.out]&&(G.collected[r.out]||0)<G.L.goals[r.out]))?1:0;
+}
+function pickRecipe(d){
+  const ok=d.recipes.filter(r=>Object.entries(r.in).every(([k,n])=>(G.store[k]||0)>=n));
+  return ok.sort((a,b)=>needOf(b.out)-needOf(a.out))[0]||null;
+}
+function enqueueJob(w,job){
+  if(w.busy) w.jobs.push(job); else{w.busy=true; w.t=0; w.cur=job;}
+  w.queue=w.jobs.length; w.dur=WS[w.type].time*wsMult();
+}
+function tapMeatAnimal(a){
+  const st=ANIM[a.type];
+  if(!a.ready){toast(`This ${st.name} is still growing. Keep it fed.`); return;}
+  const i=G.ws.findIndex(w=>w&&w.type==='meat'), w=G.ws[i];
+  if(!w){toast('There is no meat shop on this farm.'); sfx('err'); return;}
+  if(!w.built){toast('Build the meat shop first.'); sfx('err'); return;}
+  if(w.busy&&w.jobs.length>=3){toast('The meat shop is busy. Try again in a moment.'); sfx('err'); return;}
+  a.dead=true; fx('dust',a.x,a.y); fx('fly',a.x,a.y,{item:st.meat,tx:G.wsX[i],ty:WS_BY-30});
+  enqueueJob(w,{out:st.meat,n:3}); sfx('pop');
+}
+function waterTree(tr){
+  if(tr.wet>5){toast('That tree is already watered.'); return;}
+  if(G.water<=0){toast('No water left. Tap the well to draw more.'); sfx('err'); return;}
+  G.water--; tr.wet=20; fx('splash',tr.x,tr.y-6); sfx('water');
 }
 function tapWell(){
   if(G.wellT>0) return;
@@ -1171,7 +1363,7 @@ function plantAt(x,y){
 function buy(k){
   const b=BUY[k];
   if(G.money<b.cost){toast(`A ${b.name.toLowerCase()} costs ₹${b.cost}.`); sfx('err'); return;}
-  if(b.kind==='tree'){if(G.trees.length>=4){toast('All four planting spots are taken.'); sfx('err'); return;} G.money-=b.cost; addTree(k,false); sfx('grow');}
+  if(b.kind==='tree'){if(G.trees.length>=TREE_SLOTS.length){toast('All the planting spots are taken.'); sfx('err'); return;} G.money-=b.cost; addTree(k,false); sfx('grow');}
   else{if(G.animals.length+G.boats.filter(b=>!b.spawned).length>=14){toast('The farm has as many animals as it can feed.'); sfx('err'); return;}
     G.money-=b.cost; G.boats.push({id:++UID,t:0,dur:4,cargo:k,spawned:false}); sfx('boat');}
   sfx('buy');
@@ -1194,10 +1386,10 @@ function render(){
     g.drawImage(ga,(i%GP)*gaPx,(l-1)*gaPx,gaPx,gaPx,Math.round((c[0]-GB/2)*K),Math.round((c[1]-GB/2)*K),gaPx,gaPx);}
   g.setTransform(K,0,0,K,0,0);
   // workshops
-  for(let i=0;i<3;i++) drawWorkshop(i,t);
+  for(let i=0;i<G.ws.length;i++) drawWorkshop(i,t);
   // y-sorted entities
   const list=[];
-  G.trees.forEach(tr=>list.push([tr.y,()=>tr.type==='palm'?drawPalm(g,tr.x,tr.y,tr.g,t+tr.slot):drawBanana(g,tr.x,tr.y,tr.g,t+tr.slot,tr.t/TREE.banana.period)]));
+  G.trees.forEach(tr=>list.push([tr.y,()=>drawTree(g,tr,t)]));
   G.products.forEach(p=>list.push([p.y-1,()=>drawProduct(p)]));
   G.animals.forEach(a=>list.push([a.y,()=>drawAnimal(a)]));
   G.cages.forEach(c=>list.push([c.y,()=>drawCage(c)]));
@@ -1211,7 +1403,7 @@ function render(){
   g.fillStyle='#fff6d8'; g.font='800 12px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText(`${used}/${cap}`,WH.x,WH.by);
   drawWell(g,t);
   // vehicle
-  const T=G.truck, lvl=UP().auto;
+  const T=G.truck, lvl=autoLvl();
   if(T.state==='home') drawVehicle(g,PARK.x,PARK.y,lvl,cargoUsed()/autoCap(),false);
   else{const p=T.t/autoTrip(), off=W+130;
     if(p<.3) drawVehicle(g,PARK.x+(off-PARK.x)*Math.pow(p/.3,2),PARK.y,lvl,1,true);
@@ -1227,7 +1419,7 @@ function render(){
   drawBot(g);
 }
 function drawWorkshop(i,t){
-  const g=ctx, w=G.ws[i], x=WS_X[i];
+  const g=ctx, w=G.ws[i], x=G.wsX[i], bw=G.wsW, nar=bw<90;
   if(!w){ // banana grove where no workshop is used this level
     drawBanana(g,x-24,WS_BY-2,.8,t+i,0); drawBanana(g,x+20,WS_BY+2,.9,t+i+1,0);
     g.fillStyle='#3f7a34'; ell(g,x,WS_BY-4,13,8); g.fill(); g.fillStyle='#d8352a'; ell(g,x-4,WS_BY-7,2.3,2.3); g.fill(); ell(g,x+5,WS_BY-3,2.3,2.3); g.fill();
@@ -1235,28 +1427,33 @@ function drawWorkshop(i,t){
   }
   const d=WS[w.type];
   if(!w.built){
-    g.setLineDash([5,4]); g.strokeStyle='rgba(120,60,30,.7)'; g.lineWidth=2; rr(g,x-46,WS_BY-58,92,56,6); g.stroke(); g.setLineDash([]);
-    g.fillStyle='rgba(169,71,43,.15)'; rr(g,x-46,WS_BY-58,92,56,6); g.fill();
+    const pw=bw-12, bd=Math.min(96,bw-4);
+    g.setLineDash([5,4]); g.strokeStyle='rgba(120,60,30,.7)'; g.lineWidth=2; rr(g,x-pw/2,WS_BY-58,pw,56,6); g.stroke(); g.setLineDash([]);
+    g.fillStyle='rgba(169,71,43,.15)'; rr(g,x-pw/2,WS_BY-58,pw,56,6); g.fill();
     g.fillStyle='#6b4423'; g.fillRect(x-1.5,WS_BY-40,3,34);
-    g.fillStyle='#f6ecd0'; rr(g,x-48,WS_BY-84,96,46,5); g.fill(); g.strokeStyle='#6b4423'; g.lineWidth=1.5; g.stroke();
-    drawItem(g,d.out,x-34,WS_BY-61,1.1);
-    g.fillStyle='#3a2414'; g.font='700 12px '+FONT; g.textAlign='left'; g.textBaseline='middle'; g.fillText(d.name,x-22,WS_BY-71);
-    g.fillStyle=G.money>=d.cost?'#2f6b3a':'#a9472b'; g.font='800 13px '+FONT; g.fillText(`Build ₹${d.cost}`,x-22,WS_BY-53);
+    g.fillStyle='#f6ecd0'; rr(g,x-bd/2,WS_BY-84,bd,46,5); g.fill(); g.strokeStyle='#6b4423'; g.lineWidth=1.5; g.stroke();
+    if(nar){g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='#3a2414'; g.font='700 10.5px '+FONT; g.fillText(d.name,x,WS_BY-74);
+      drawItem(g,d.icon,x-22,WS_BY-56,.95);
+      g.fillStyle=G.money>=d.cost?'#2f6b3a':'#a9472b'; g.font='800 12px '+FONT; g.fillText(`₹${d.cost}`,x+6,WS_BY-55);}
+    else{drawItem(g,d.icon,x-34,WS_BY-61,1.1);
+      g.fillStyle='#3a2414'; g.font='700 12px '+FONT; g.textAlign='left'; g.textBaseline='middle'; g.fillText(d.name,x-22,WS_BY-71);
+      g.fillStyle=G.money>=d.cost?'#2f6b3a':'#a9472b'; g.font='800 13px '+FONT; g.fillText(`Build ₹${d.cost}`,x-22,WS_BY-53);}
     return;
   }
-  drawKBCached(g,w.type,x,WS_BY,104,{wall:d.wall,pillar:d.pillar,sign:d.sign,extra:WS_EXTRA[w.type]});
+  drawKBCached(g,w.type+bw,x,WS_BY,bw,{wall:d.wall,pillar:d.pillar,sign:d.sign,extra:WS_EXTRA[w.type]});
   if(w.busy){
     const p=Math.min(1,w.t/w.dur);
     g.fillStyle='rgba(36,24,12,.75)'; rr(g,x-30,WS_BY+3,60,7,3.5); g.fill();
     g.fillStyle='#e2b33c'; rr(g,x-29,WS_BY+4,58*p,5,2.5); g.fill();
-    for(let k=0;k<3;k++){const q=((t*.6+k/3)%1); g.fillStyle=`rgba(240,240,235,${.55*(1-q)})`; ell(g,x+30+q*6,WS_BY-80-q*20,3+q*5,3+q*5); g.fill();}
-    if(w.queue>0){g.fillStyle='#a9472b'; ell(g,x+44,WS_BY-50,10,10); g.fill(); g.fillStyle='#fff6d8'; g.font='800 12px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText('+'+w.queue,x+44,WS_BY-50);}
+    for(let k=0;k<3;k++){const q=((t*.6+k/3)%1); g.fillStyle=`rgba(240,240,235,${.55*(1-q)})`; ell(g,x+bw*.29+q*6,WS_BY-80-q*20,3+q*5,3+q*5); g.fill();}
+    if(w.queue>0){const qx=x+bw*.42; g.fillStyle='#a9472b'; ell(g,qx,WS_BY-50,10,10); g.fill(); g.fillStyle='#fff6d8'; g.font='800 12px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText('+'+w.queue,qx,WS_BY-50);}
   }else{
-    const ready=Object.entries(d.in).every(([k,n])=>(G.store[k]||0)>=n);
-    const bob=Math.sin(t*4)*2, bx=x+40, byy=WS_BY-62+bob;
+    const r=d.animal?null:(pickRecipe(d)||d.recipes[0]);
+    const ready=d.animal?G.animals.some(a=>a.ready):!!pickRecipe(d);
+    const bob=Math.sin(t*4)*2, bx=x+bw*.38, byy=WS_BY-62+bob;
     g.globalAlpha=ready?1:.55;
     g.fillStyle='#fff6d8'; ell(g,bx,byy,12,12); g.fill(); g.strokeStyle=ready?'#2f6b3a':'#8a7a66'; g.lineWidth=1.5; g.stroke();
-    drawItem(g,Object.keys(d.in)[0],bx,byy,.95);
+    drawItem(g,d.animal?'pork':Object.keys(r.in)[0],bx,byy,.95);
     g.globalAlpha=1;
   }
 }
@@ -1268,7 +1465,16 @@ function drawProduct(p){
 }
 function drawAnimal(a){
   const g=ctx;
-  if(a.type==='hen') drawHen(g,a.x,a.y,a.dir,a.walk,a.mv); else drawDuck(g,a.x,a.y,a.dir,a.walk,a.mv);
+  const st=ANIM[a.type];
+  if(a.type==='hen') drawHen(g,a.x,a.y,a.dir,a.walk,a.mv);
+  else if(a.type==='duck') drawDuck(g,a.x,a.y,a.dir,a.walk,a.mv);
+  else if(a.type==='pig') drawPig(g,a.x,a.y,a.dir,a.walk,a.mv,.7+.4*a.prod);
+  else drawBuffalo(g,a.x,a.y,a.dir,a.walk,a.mv,.6+.45*a.prod);
+  if(st.meat){
+    const ty=a.y-(a.type==='pig'?24:32);
+    if(a.ready){const by=ty-4+Math.sin(now*4)*1.5; g.fillStyle='#2f9a4a'; ell(g,a.x,by,8,8); g.fill(); g.strokeStyle='#fff'; g.lineWidth=2; g.beginPath(); g.moveTo(a.x-3.5,by); g.lineTo(a.x-1,by+3); g.lineTo(a.x+4,by-3); g.stroke(); return;}
+    if(a.food>=.35){g.fillStyle='rgba(36,24,12,.55)'; rr(g,a.x-10,ty-2,20,4,2); g.fill(); g.fillStyle='#6fc36b'; rr(g,a.x-9,ty-1.2,18*a.prod,2.4,1.2); g.fill();}
+  }
   if(a.food<.35){
     const y=a.y-24;
     if(a.food<=0){g.fillStyle='#d8352a'; ell(g,a.x,y,7,7); g.fill(); g.fillStyle='#fff'; g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText('!',a.x,y+1);}
@@ -1314,10 +1520,14 @@ function buildIcons(){
   ICON.buy_duck=mkIcon(g=>{g.scale(1.3,1.3); drawDuck(g,-2,6,1,0,false);});
   ICON.buy_palm=mkIcon(g=>{g.scale(.5,.5); drawPalm(g,-2,36,1,0);});
   ICON.buy_banana=mkIcon(g=>{g.scale(.6,.6); drawBanana(g,-4,28,1,0,1);});
+  ICON.buy_pig=mkIcon(g=>{g.scale(1.25,1.25); drawPig(g,-2,6,1,0,false,1);});
+  ICON.buy_buffalo=mkIcon(g=>{g.scale(.95,.95); drawBuffalo(g,-3,10,1,0,false,1);});
+  ICON.buy_jack=mkIcon(g=>{g.scale(.5,.5); drawJack(g,0,34,1,0,.9);});
+  ICON.buy_kappa=mkIcon(g=>{g.scale(.75,.75); drawKappa(g,0,20,1,0);});
   ICON.money=mkIcon(g=>{g.scale(1.4,1.4); drawCoin(g);});
 }
 let toastTimer=0;
-function toast(msg){showToast(msg); if(NET.role==='host') NET.ev.push({toast:msg});}
+function toast(msg){if(ACTOR!=='remote') showToast(msg); if(NET.role==='host'&&ACTOR!=='local') NET.ev.push({toast:msg});}
 function showToast(msg){const el=$('#toast'); el.textContent=msg; el.hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.hidden=true,2800);}
 const fmtT=s=>{s=Math.floor(s); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const medalFor=(L,t)=>{t=Math.floor(t); return t<=L.gold?3:t<=L.silver?2:1;};
@@ -1344,9 +1554,9 @@ function renderHUD(){
 function startLevel(i){
   if(NET.role==='host') NET.send({t:'start',li:i});
   UPV=NET.role==='guest'?NET.up:null;
-  newGame(i); botStart(); hudSig=''; setMusic(i===LEVELS.length-1?'rush':'play');
+  newGame(i); botStart(); hudSig=''; setMusic(LEVELS[i].rush?'rush':'play');
   $('#lvlName').textContent=`${i+1}. ${G.L.name}${G.L.hard?' · Hard':''}`;
-  $('#buybar').innerHTML=G.L.buy.map(k=>`<button class="buy" data-buy="${k}" aria-label="Buy ${BUY[k].name} for ₹${BUY[k].cost}"><img src="${ICON['buy_'+k]}" alt=""><span class="nm">${BUY[k].name}</span><span class="pr">₹${BUY[k].cost}</span></button>`).join('');
+  $('#buybar').innerHTML=G.L.buy.map(k=>`<button class="buy" data-buy="${k}" aria-label="Buy ${BUY[k].name} for ₹${BUY[k].cost}"><img src="${ICON['buy_'+k]}" alt=""><span class="nm">${G.L.buy.length>4&&BUY[k].short||BUY[k].name}</span><span class="pr">₹${BUY[k].cost}</span></button>`).join('');
   OVS.forEach(hide);
   $('#inNum').textContent=`Level ${i+1} of ${LEVELS.length}`;
   $('#inName').textContent=G.L.name; $('#inHard').hidden=!G.L.hard;
@@ -1360,7 +1570,7 @@ function openMarket(){show('#ovMarket'); renderMarket(); NET.mkSig=marketSig();}
 function renderMarket(){
   const T=G.truck, away=T.state!=='home', cu=cargoUsed(), ac=autoCap();
   $('#mkCap').textContent=`${storeUsed()}/${storeCap()} stored`;
-  $('#mkAutoName').textContent=UPG.auto.names[UP().auto];
+  $('#mkAutoName').textContent=UPG.auto.names[autoLvl()];
   $('#mkLoad').textContent=`${cu}/${ac} loaded`;
   const keys=Object.keys(ITEMS).filter(k=>(G.store[k]||0)>0);
   $('#mkRows').innerHTML=keys.length?keys.map(k=>`<div class="mrow"><img src="${ICON[k]}" alt=""><div class="mname">${ITEMS[k].name} <span class="q">×${G.store[k]}</span><small>₹${ITEMS[k].price} each</small></div><div class="mbtns"><button class="sbtn" data-load="${k}" ${away||cu>=ac?'disabled':''}>+1</button><button class="sbtn" data-loadall="${k}" ${away||cu>=ac?'disabled':''}>All</button></div><span></span></div>`).join('')
@@ -1370,7 +1580,15 @@ function renderMarket(){
   if(away){const left=Math.ceil(autoTrip()-T.t); $('#mkStatus').textContent=T.sold?`Sold. The auto-rickshaw will be back about ${left}s after you return to the farm.`:`The auto-rickshaw is on its way to the market and will be back about ${left}s after you return to the farm.`;}
   else $('#mkStatus').textContent=cu?`This load sells for ₹${cargoValue().toLocaleString('en-IN')}.`:'';
   $('#mkGo').disabled=away||cu===0;
+  const nl=autoLvl()+1, up=$('#mkUp'); up.hidden=nl>3;
+  if(nl<=3){up.textContent=`Upgrade to ${UPG.auto.names[nl]} · ₹${AUTO_UP_COST[nl].toLocaleString('en-IN')} (this level)`; up.disabled=away||G.money<AUTO_UP_COST[nl];}
 }
+function marketUpgrade(){
+  const nl=autoLvl()+1; if(!G||nl>3||G.truck.state!=='home') return;
+  if(G.money<AUTO_UP_COST[nl]){toast(`The upgrade costs ₹${AUTO_UP_COST[nl]}.`); sfx('err'); return;}
+  G.money-=AUTO_UP_COST[nl]; G.autoBoost=(G.autoBoost||0)+1; sfx('honk'); toast(`Upgraded to the ${UPG.auto.names[nl]} for this level. It carries ${autoCap()}.`);
+}
+$('#mkUp').onclick=()=>{if(!G) return; if(NET.role==='guest') NET.send({t:'upauto'}); else{asActor('local',marketUpgrade); renderMarket();}};
 function marketAction(a,k){
   if(!G||!ITEMS[k]) return; const T=G.truck; if(T.state!=='home') return;
   const room=autoCap()-cargoUsed();
@@ -1382,16 +1600,16 @@ function marketGo(){
   const T=G.truck; if(T.state!=='home'||!cargoUsed()) return;
   T.state='going'; T.t=0; T.sold=false; sfx('depart'); toast('The auto is off to the market.');
 }
-const marketSig=()=>JSON.stringify([G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
+const marketSig=()=>JSON.stringify([G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
 $('#ovMarket').addEventListener('click',e=>{
   const b=e.target.closest('button[data-load],button[data-loadall],button[data-unload]'); if(!b||!G) return;
   const a=b.dataset.load?'load':b.dataset.loadall?'loadall':'unload', k=b.dataset.load||b.dataset.loadall||b.dataset.unload;
   playSfx(a==='unload'?'pop':'load');
-  if(NET.role==='guest') NET.send({t:'mk',a,k}); else{marketAction(a,k); renderMarket();}
+  if(NET.role==='guest') NET.send({t:'mk',a,k}); else{asActor('local',()=>marketAction(a,k)); renderMarket();}
 });
 $('#mkClose').onclick=()=>hide('#ovMarket');
-$('#mkGo').onclick=()=>{if(!G) return; if(NET.role==='guest'){NET.send({t:'go'}); hide('#ovMarket'); return;} marketGo(); hide('#ovMarket');};
-$('#buybar').addEventListener('click',e=>{const b=e.target.closest('.buy'); if(!b||!G||G.state!=='play'||isPaused()) return; audio(); if(NET.role==='guest') NET.send({t:'buy',k:b.dataset.buy}); else buy(b.dataset.buy);});
+$('#mkGo').onclick=()=>{if(!G) return; if(NET.role==='guest'){NET.send({t:'go'}); hide('#ovMarket'); return;} asActor('local',marketGo); hide('#ovMarket');};
+$('#buybar').addEventListener('click',e=>{const b=e.target.closest('.buy'); if(!b||!G||G.state!=='play'||isPaused()) return; audio(); if(NET.role==='guest') NET.send({t:'buy',k:b.dataset.buy}); else asActor('local',()=>buy(b.dataset.buy));});
 $('#inStart').onclick=()=>{hide('#ovIntro'); G.state='play'; audio();};
 $('#btnPause').onclick=()=>{if(!G||G.state==='won') return; $('#psName').textContent=G.L.name; syncSoundUI(); const c=coop(); $('#psEyebrow').textContent=c?'Menu':'Paused'; $('#psResume').textContent=c?'Back to the farm':'Resume'; $('#psNote').hidden=!c; $('#psLeave').hidden=!c&&!BOT.on; $('#psLeave').textContent=c?'Leave co-op game':'Send Kuttan home'; $('#psRestart').hidden=NET.role==='guest'; $('#psMap').hidden=NET.role==='guest'; show('#ovPause');};
 $('#psResume').onclick=()=>hide('#ovPause');
@@ -1416,8 +1634,8 @@ function showResult(){
   const md=$('#rsMedal'); md.textContent=MEDAL_NAME[m]; md.style.background=MEDAL_VAR[m]; md.style.color='';
   $('#rsTime').textContent='Time '+fmtT(G.t);
   $('#rsCoins').textContent=`+${coins} gold coins`;
-  const last=i===LEVELS.length-1;
-  $('#rsNote').textContent=last?'Kuttanad is done. The Wayanad hills, with goats and wild boar, come next.':m<3?`Finish under ${fmtT(m===1?G.L.silver:G.L.gold)} for a better medal. Spend gold coins on upgrades from the map.`:'Spend gold coins on upgrades from the map.';
+  const last=i===LEVELS.length-1, regionEnd=last||regionOf(i+1)!==regionOf(i);
+  $('#rsNote').textContent=regionEnd?(regionOf(i)===1?'Kuttanad is done. Next: the Idukki high range, with jackfruit, tapioca, pigs and buffalo.':'The high range is done. More regions are coming.'):m<3?`Finish under ${fmtT(m===1?G.L.silver:G.L.gold)} for a better medal. Spend gold coins on upgrades from the map.`:'Spend gold coins on upgrades from the map.';
   const g=NET.role==='guest'; $('#rsNext').hidden=last||g; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
   if(g) $('#rsNote').textContent='Your friend picks what to play next. '+$('#rsNote').textContent;
   show('#ovResult'); sfx('ding');
@@ -1437,12 +1655,12 @@ $('#rsNext').onclick=()=>startLevel(G.li+1);
 
 function goMap(){if(NET.role==='host') NET.send({t:'map'}); UPV=null; setMusic('map'); G=null; OVS.forEach(hide); renderMap(); show('#ovMap'); fit();}
 function goalSummary(L){return Object.entries(L.goals).map(([k,n])=>k==='money'?'₹'+n.toLocaleString('en-IN'):n+' '+plural(ITEMS[k].name.toLowerCase(),n)).join(' · ');}
-function plural(w,n){return n>1&&!w.endsWith('s')?w+'s':w;}
+function plural(w,n){return n>1&&!w.endsWith('s')&&!MASS.has(w)?w+'s':w;}
 function renderMap(){
   if(typeof renderCoopBar==='function') renderCoopBar();
   $('#mapCoins').textContent=SAVE.coins;
   $('#levels').innerHTML=LEVELS.map((L,i)=>{const locked=i>=SAVE.unlocked, st=SAVE.stars[i]||0;
-    return `<button class="lvl ${i%2?'r':'l'}" data-lvl="${i}" ${locked?'disabled':''} aria-label="Level ${i+1}, ${L.name}${locked?', locked':st?', '+MEDAL_NAME[st]+' medal':''}"><span class="num">${i+1}</span><span class="lt"><b>${L.name}</b><small>${goalSummary(L)}</small></span><span class="medal m${st}"></span></button>`;}).join('');
+    return (i===0||regionOf(i)!==regionOf(i-1)?`<p class="region">${REGIONS[regionOf(i)]}</p>`:'')+`<button class="lvl ${i%2?'r':'l'}" data-lvl="${i}" ${locked?'disabled':''} aria-label="Level ${i+1}, ${L.name}${locked?', locked':st?', '+MEDAL_NAME[st]+' medal':''}"><span class="num">${i+1}</span><span class="lt"><b>${L.name}</b><small>${goalSummary(L)}</small></span><span class="medal m${st}"></span></button>`;}).join('');
 }
 $('#levels').addEventListener('click',e=>{const b=e.target.closest('.lvl'); if(!b||b.disabled) return; if(NET.role==='guest'){toast('Your friend picks the level while you play together.'); return;} audio(); startLevel(+b.dataset.lvl);});
 let resetArmed=false;
@@ -1462,7 +1680,7 @@ $('#shRows').addEventListener('click',e=>{const b=e.target.closest('[data-up]');
   if(SAVE.coins>=cost&&SAVE.up[k]<3){SAVE.coins-=cost; SAVE.up[k]++; persist(); sfx(k==='auto'?'depart':'cash'); renderShop();}});
 
 cv.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
-cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect(); onTap((e.clientX-r.left)/r.width*W,(e.clientY-r.top)/r.height*H);});
+cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect(); asActor('local',()=>onTap((e.clientX-r.left)/r.width*W,(e.clientY-r.top)/r.height*H));});
 
 // ---------- co-op (two phones, one farm) ----------
 // The host runs the simulation; the guest sends its taps and shows the host's state, sent about 12 times a second.
@@ -1619,10 +1837,13 @@ function onNet(d){
   if(d.t==='bye'){onNetClose(); return;}
   if(NET.role==='host'){
     if(!G) return;
-    if(d.t==='tap'&&typeof d.x==='number'&&typeof d.y==='number') onTap(d.x,d.y,true);
-    else if(d.t==='buy'&&BUY[d.k]&&G.state==='play'&&G.L.buy.includes(d.k)) buy(d.k);
-    else if(d.t==='mk'&&G.state==='play') marketAction(d.a,d.k);
-    else if(d.t==='go'&&G.state==='play') marketGo();
+    asActor('remote',()=>{
+      if(d.t==='tap'&&typeof d.x==='number'&&typeof d.y==='number') onTap(d.x,d.y,true);
+      else if(d.t==='buy'&&BUY[d.k]&&G.state==='play'&&G.L.buy.includes(d.k)) buy(d.k);
+      else if(d.t==='mk'&&G.state==='play') marketAction(d.a,d.k);
+      else if(d.t==='go'&&G.state==='play') marketGo();
+      else if(d.t==='upauto'&&G.state==='play') marketUpgrade();
+    });
   }else if(NET.role==='guest'){
     if(d.t==='start'&&LEVELS[d.li]) startLevel(d.li);
     else if(d.t==='map') goMap();
@@ -1633,8 +1854,8 @@ function snap(){
   const T=G.truck;
   return{t:'s',li:G.li,m:G.money,gt:r1(G.t),st:G.state,w:G.water,wt:r1(G.wellT),up:SAVE.up,
     g:Array.from(G.grass,v=>Math.round(v*20)),
-    a:G.animals.map(a=>[a.id,a.type==='hen'?0:1,r1(a.x),r1(a.y),a.dir,Math.round(a.food*100),a.mv?1:0]),
-    tr:G.trees.map(t=>[t.type==='palm'?0:1,t.slot,r1(t.g),r1(t.t)]),
+    a:G.animals.map(a=>[a.id,ANIM_TYPES.indexOf(a.type),r1(a.x),r1(a.y),a.dir,Math.round(a.food*100),a.mv?1:0,a.ready?1:0,Math.round(a.prod*100)]),
+    tr:G.trees.map(t=>[TREE_TYPES.indexOf(t.type),t.slot,r1(t.g),r1(t.t),r1(t.wet||0)]),ab:G.autoBoost||0,
     p:G.products.map(p=>[p.id,p.type,r1(p.x),r1(p.y),r1(p.life),r1(p.age)]),
     j:G.jackals.map(j=>[j.id,r1(j.x),r1(j.y),j.dir,j.taps,r1(j.stun),j.carry||0,j.mv?1:0]),
     mk:G.monkeys.map(m=>[m.id,r1(m.x),r1(m.y),m.dir,m.taps,r1(m.stun),m.item||0,m.mv?1:0,m.state==='scared'?1:0]),
@@ -1652,10 +1873,11 @@ function applySnap(d){
   if(!G||G.li!==d.li) return;
   NET.up=d.up; UPV=d.up; G.money=d.m; G.t=d.gt; G.water=d.w; G.wellT=d.wt;
   for(let i=0;i<G.grass.length;i++) G.grass[i]=(d.g[i]||0)/20;
-  G.animals=syncList(G.animals,d.a,([id,ty,x,y,dir,food,mv],o)=>Object.assign(o||{id,walk:Math.random()*5},{type:ty?'duck':'hen',tx:x,ty:y,dir,food:food/100,mv:!!mv}));
+  G.animals=syncList(G.animals,d.a,([id,ty,x,y,dir,food,mv,rd,pr],o)=>Object.assign(o||{id,walk:Math.random()*5},{type:ANIM_TYPES[ty],tx:x,ty:y,dir,food:food/100,mv:!!mv,ready:!!rd,prod:(pr||0)/100}));
   G.jackals=syncList(G.jackals,d.j,([id,x,y,dir,taps,stun,carry,mv],o)=>Object.assign(o||{id,walk:0,need:G.hard?8:5},{tx:x,ty:y,dir,taps,stun,carry:carry||null,mv:!!mv}));
   G.monkeys=syncList(G.monkeys,d.mk,([id,x,y,dir,taps,stun,item,mv,sc],o)=>Object.assign(o||{id,walk:0,need:G.hard?5:3},{tx:x,ty:y,dir,taps,stun,item:item||null,mv:!!mv,state:sc?'scared':'seek'}));
-  G.trees=d.tr.map(([ty,slot,g,t])=>({type:ty?'banana':'palm',slot,x:TREE_SLOTS[slot].x,y:TREE_SLOTS[slot].y,g,t}));
+  G.trees=d.tr.map(([ty,slot,g,t,wet])=>({type:TREE_TYPES[ty],slot,x:TREE_SLOTS[slot].x,y:TREE_SLOTS[slot].y,g,t,wet:wet||0}));
+  G.autoBoost=d.ab||0;
   const pOld={}; G.products.forEach(p=>{pOld[p.id]=p;});
   G.products=d.p.map(([id,type,x,y,life,age])=>Object.assign(pOld[id]||{id,age},{type,x,y,life,max:life}));
   G.cages=d.c.map(([x,y,t,max])=>({x,y,t,max}));
@@ -1711,24 +1933,32 @@ function botStart(){BOT.on=BOT.armed&&!NET.role; BOT.x=WH.x+40; BOT.y=520; BOT.t
 function botKeep(){ // inputs a built workshop still needs, so Kuttan doesn't sell them
   const keep={};
   G.ws.forEach(w=>{
-    if(!w||!w.built) return; const d=WS[w.type], goal=G.L.goals[d.out];
-    const needed=(goal&&(G.collected[d.out]||0)<goal)||G.ws.some(o=>o&&o.built&&WS[o.type].in[d.out]);
-    if(needed) for(const k in d.in) keep[k]=true;
+    if(!w||!w.built) return;
+    WS[w.type].recipes.forEach(r=>{if(needOf(r.out)>0) for(const k in r.in) keep[k]=true;});
   });
   return keep;
 }
 function botTap(get,intent){return{get,intent,act:p=>onTap(p[0],p[1],true)};}
+function botWorkshop(){ // the next workshop job Kuttan can start, or null
+  for(let i=0;i<G.ws.length;i++){
+    const w=G.ws[i]; if(!w||!w.built||(w.busy&&w.queue>=1)) continue; const d=WS[w.type];
+    if(d.animal){const ra=G.animals.find(a=>a.ready&&!a.enter&&!a.dead); if(ra) return botTap(()=>ra.dead?null:[ra.x,ra.y-8],'Taking the '+ANIM[ra.type].name+' to the meat shop'); continue;}
+    if(pickRecipe(d)) return botTap(()=>[G.wsX[i],WS_BY-30],'Running the '+d.name.toLowerCase());
+  }
+  return null;
+}
 function botChoose(){
   const free=storeCap()-storeUsed(), inField=o=>o.x>FX&&o.x<FX+FW&&o.y>FY-10&&o.y<FY+FH+10;
   const j=G.jackals.find(j=>j.carry&&inField(j))||G.jackals.find(j=>j.state==='hunt'&&inField(j));
   if(j) return botTap(()=>j.gone?null:[j.x+3*j.dir,j.y-4],'Chasing the jackal');
   const m=G.monkeys.find(m=>m.state!=='scared'&&inField(m));
   if(m) return botTap(()=>m.gone||m.state==='scared'?null:[m.x,m.y-10],'Shooing the monkey');
+  const wsAct=botWorkshop();
   if(free>0&&G.products.length){
-    const goal=k=>G.L.goals[k]&&(G.collected[k]||0)<G.L.goals[k]?1:0;
-    const p=G.products.slice().sort((a,b)=>(goal(b.type)-goal(a.type))||(a.life-b.life))[0];
-    return botTap(()=>G.products.includes(p)?[p.x,p.y-3]:null,'Collecting');
+    const p=G.products.slice().sort((a,b)=>(needOf(b.type)-needOf(a.type))||(a.life-b.life))[0];
+    if(!wsAct||needOf(p.type)>0||p.life<5) return botTap(()=>G.products.includes(p)?[p.x,p.y-3]:null,'Collecting');
   }
+  if(wsAct) return wsAct;
   if(free>0&&G.cages.length){const c=G.cages[0]; return botTap(()=>G.cages.includes(c)?[c.x,c.y-10]:null,'Fetching the cage');}
   if(G.water===0&&G.wellT<=0) return botTap(()=>[WELL.x,WELL.by-46],'Drawing water');
   if(G.water>0){
@@ -1742,10 +1972,7 @@ function botChoose(){
       return botTap(()=>[x,y],'Watering');
     }
   }
-  for(let i=0;i<3;i++){
-    const w=G.ws[i]; if(!w||!w.built||(w.busy&&w.queue>=1)) continue; const d=WS[w.type];
-    if(Object.entries(d.in).every(([k,n])=>(G.store[k]||0)>=n)) return botTap(()=>[WS_X[i],WS_BY-30],'Running the '+d.name.toLowerCase());
-  }
+  if(G.water>=2){const tr=G.trees.find(t=>(t.wet||0)<=0); if(tr) return botTap(()=>G.trees.includes(tr)?[tr.x,tr.y-20]:null,'Watering the trees');}
   if(G.truck.state==='home'){
     const keep=botKeep(), sell=Object.keys(G.store).filter(k=>G.store[k]>0&&!keep[k]), n=sell.reduce((a,k)=>a+G.store[k],0);
     const needCash=G.L.goals.money&&G.money<G.L.goals.money;

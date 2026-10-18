@@ -385,6 +385,7 @@ const autoTrip=()=>UPG.auto.trip[UP().auto], wsMult=()=>UPG.ws.mult[UP().ws];
 // Custom sound files (published next to the page in sounds/). Moments without a file keep the synthesised sound.
 const CUSTOM_SFX={     // sound name -> file, or a list of files to pick from at random
   win:['sounds/win-ithokke-enth.mp3'],
+  hit:'sounds/punch.mp3',   // each tap on a jackal or monkey
   fail:['sounds/fail.mp3','sounds/fail-paripadi-saslim.mp3'],
   attack:'sounds/attack.mp3',  // a jackal grabs a bird or a monkey steals goods (no sound when they arrive)
 };
@@ -400,7 +401,7 @@ function pickBuf(key){ // random clip from the list, never the same one twice in
   const a=BUF[key]; if(!a||!a.length) return null; if(a.length===1) return a[0];
   let b; do{b=a[Math.floor(Math.random()*a.length)];}while(b===lastPick[key]); return lastPick[key]=b;
 }
-const CUSTOM_VOL={fail:.8,attack:.8,win:.85};
+const CUSTOM_VOL={fail:.8,attack:.8,win:.85,hit:.7};
 function playBuf(buf,dest,vol){const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=buf; g.gain.value=vol||1; s.connect(g); g.connect(dest); s.start(); return s;}
 let AC=null, MASTER=null, MUSIC=null, MUSBUS=null, SFXG=null, ECHO=null, NOISE=null;
 const MUSIC_VOL=.55, SFX_VOL=.9;

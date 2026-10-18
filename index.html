@@ -47,6 +47,11 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 
 #stageWrap{position:relative;line-height:0;display:flex;justify-content:center;background:#1d4526}
 #cv{display:block;touch-action:none}
+.say-btn{width:auto;padding:0 12px;background:#1f9fae}
+.say-panel{position:absolute;z-index:7;left:8px;right:8px;bottom:8px;background:var(--cream);border-radius:14px;box-shadow:0 0 0 3px var(--kasavu),0 8px 20px rgba(0,0,0,.35);padding:10px;line-height:normal}
+.say-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.say-grid button{min-height:42px;border:0;border-radius:10px;background:#1f9fae;color:#fff;font-weight:700;font-size:14px}
+.say-bubble{position:absolute;z-index:6;left:10px;top:10px;max-width:70%;background:#1f9fae;color:#fff;font-weight:700;font-size:14px;line-height:1.3;padding:6px 12px;border-radius:14px 14px 14px 4px;box-shadow:0 2px 8px rgba(0,0,0,.3);pointer-events:none}
 #toast{position:absolute;z-index:6;left:50%;top:21.5%;transform:translateX(-50%);width:max-content;max-width:86%;background:rgba(36,24,12,.9);color:var(--cream);border:1px solid var(--kasavu);padding:6px 12px;border-radius:10px;font-size:13px;line-height:1.35;text-align:center;pointer-events:none}
 
 #buybar{display:flex;gap:6px;padding:6px 8px;background:var(--palm-deep);border-top:3px solid var(--kasavu);min-height:66px;box-sizing:border-box}
@@ -163,6 +168,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
     <header id="hud">
       <div class="hud-top">
         <button class="icon-btn" id="btnPause" aria-label="Pause">II</button>
+        <button class="icon-btn say-btn" id="btnSay" aria-label="Meme sounds">Say</button>
         <div id="lvlName"></div>
         <div id="money">₹0</div>
         <div id="timer"><span class="mdot" id="mdot"></span><span id="time">0:00</span></div>
@@ -172,6 +178,8 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
     <div id="stageWrap">
       <canvas id="cv" aria-label="Farm field"></canvas>
       <div id="toast" role="status" hidden></div>
+      <div id="sayBubble" class="say-bubble" role="status" hidden></div>
+      <div id="sayPanel" class="say-panel" hidden><div class="say-grid" id="sayGrid"></div></div>
     </div>
     <nav id="buybar" aria-label="Buy animals and plants"></nav>
 
@@ -430,9 +438,9 @@ const CUSTOM_SFX={     // sound name -> file, or a list of files to pick from at
   attack:'sounds/attack.mp3',  // a jackal grabs a bird or a monkey steals goods (no sound when they arrive)
 };
 const CUSTOM_MUSIC={}; // map / play / rush -> file, e.g. play:'sounds/music.mp3'
-const BUF={};
+const BUF={}, BUFURL={};
 function loadCustom(){
-  const add=(key,url)=>fetch(url).then(r=>{if(!r.ok) throw new Error(url); return r.arrayBuffer();}).then(b=>AC.decodeAudioData(b)).then(buf=>{(BUF[key]=BUF[key]||[]).push(buf);}).catch(()=>{});
+  const add=(key,url)=>fetch(url).then(r=>{if(!r.ok) throw new Error(url); return r.arrayBuffer();}).then(b=>AC.decodeAudioData(b)).then(buf=>{(BUF[key]=BUF[key]||[]).push(buf); BUFURL[url]=buf;}).catch(()=>{});
   for(const [k,u] of Object.entries(CUSTOM_SFX)) [].concat(u).forEach(url=>add('sfx:'+k,url));
   for(const [k,u] of Object.entries(CUSTOM_MUSIC)) [].concat(u).forEach(url=>add('music:'+k,url));
 }
@@ -569,6 +577,11 @@ function playSfx(n){
     case 'honk': horn(autoLvl(),t,true); break;
     case 'load': osc('sine',190,t,.1,.22,{f2:90}); noise(t,.06,.12,'lowpass',700); break;
     case 'ding': bell(t,1318,.16); break;
+    case 'ev_hartal': [0,.25].forEach(d=>osc('sine',1900,t+d,.18,.12,{f2:1700})); break;
+    case 'ev_monsoon': noise(t,1.6,.22,'lowpass',260,.7,undefined,.15); noise(t+.1,.8,.12,'lowpass',600,.7); break;
+    case 'ev_powercut': osc('square',900,t,.35,.06,{f2:60,filter:'lowpass',ff:2000}); break;
+    case 'ev_procession': [0,.12,.24,.36,.44,.52,.6,.72].forEach((d,i)=>i%3?drumSlap(t+d,.45):drumLow(t+d,.6)); break;
+    case 'ev_coconut': noise(t,.7,.12,'bandpass',1200,2,undefined,.5); break;
     case 'eaten':
     case 'fail': [392,370,349,311].forEach((f,i)=>osc('sawtooth',f,t+i*.32,i===3?.9:.28,.09,{filter:'lowpass',ff:1400,f2:i===3?290:undefined})); break;
     case 'thud': osc('sine',140,t,.12,.18,{f2:70}); noise(t,.06,.08,'lowpass',600); break;
@@ -1098,7 +1111,7 @@ function newGame(li){
   G={li,L,money:L.start,t:0,state:'intro',grass:new Float32Array(COLS*ROWS),gT:new Float32Array(COLS*ROWS),
     animals:[],trees:[],products:[],jackals:[],monkeys:[],cages:[],boats:[],fx:[],floats:[],
     store:{},collected:{},ws:[],autoBoost:0,water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
-    nextJ:L.jackal?L.jackal.first:Infinity,nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
+    nextJ:L.jackal?L.jackal.first:Infinity,ev:null,evOn:li>=2&&L.events!==false,nextEv:(L.hard?30:50)*rnd(.9,1.3),nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
   G.hard=!!L.hard;
   G.slots=L.slots||WS_KEYS; const sg=slotGeom(G.slots.length); G.wsX=sg.xs; G.wsW=sg.w;
   G.ws=G.slots.map(k=>L.ws&&L.ws.includes(k)?{type:k,built:!!(L.built&&L.built.includes(k)),busy:false,t:0,dur:1,queue:0,jobs:[],cur:null}:null);
@@ -1153,17 +1166,17 @@ function update(dt){
     tr.t+=dt*rate; const per=TREE[tr.type].period;
     if(tr.t>=per){tr.t=0; dropProduct(TREE[tr.type].out,tr.x+rnd(-16,16),tr.y+rnd(4,12),18); sfx('thud');}
   });
-  G.products.forEach(p=>{p.age+=dt; p.life-=dt;});
+  const spoil=evOn('monsoon')?2:1; G.products.forEach(p=>{p.age+=dt; p.life-=dt*spoil;});
   const np=G.products.length; G.products=G.products.filter(p=>p.life>0); if(G.products.length<np) sfx('spoil');
   G.ws.forEach((w,i)=>{
-    if(!w||!w.busy) return; w.t+=dt;
+    if(!w||!w.busy||evOn('powercut')) return; w.t+=dt;
     if(w.t>=w.dur){const j=w.cur||{out:WS[w.type].icon,n:1}; for(let k=0;k<j.n;k++) dropProduct(j.out,G.wsX[i]+rnd(-22,22),FY+6+k*5,25);
       fx('puff',G.wsX[i],WS_BY-10); sfx('ding');
       if(w.jobs.length){w.cur=w.jobs.shift(); w.t=0;} else{w.busy=false; w.cur=null;} w.queue=w.jobs.length;}
   });
   const T=G.truck;
   if(T.state==='going'){
-    T.t+=dt; const p=T.t/autoTrip();
+    if(!evOn('procession')) T.t+=dt; const p=T.t/autoTrip();
     truckPulse(T,p,dt);
     if(p>=.5&&!T.sold){T.sold=true; const v=cargoValue(); G.money+=v; T.cargo={}; toast(`Sold at the market for ₹${v.toLocaleString('en-IN')}.`); sfx('cash'); floatText('+₹'+v.toLocaleString('en-IN'),W/2,60,'#ffe39a');}
     if(p>=1){T.state='home'; T.t=0; T.sold=false; T.pt=0; sfx('arrive');}
@@ -1171,6 +1184,7 @@ function update(dt){
   G.boats.forEach(b=>{b.t+=dt; boatPulse(b,dt); if(!b.spawned&&b.t/b.dur>=.4){b.spawned=true; addAnimal(b.cargo,JETTY,598,true); fx('dust',JETTY,598); sfx('splash');}});
   G.boats=G.boats.filter(b=>b.t<b.dur);
   // predators
+  updEvents(dt);
   if(G.L.jackal){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter&&!ANIM[a.type].meat)) spawnJackal();}}
   if(G.L.monkey){G.nextM-=dt; if(G.nextM<=0){G.nextM=G.L.monkey.every*rnd(.8,1.2); spawnMonkey();}}
   G.jackals.forEach(j=>updJackal(j,dt)); G.jackals=G.jackals.filter(j=>!j.gone);
@@ -1207,6 +1221,7 @@ function updAnimal(a,dt){
   if(a.food<=0){a.food=0; a.starve+=dt; if(!a.warned){a.warned=true; sfx('hungry');}
     if(a.starve>=st.starve){a.dead=true; G.lastLoss='starve'; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
   else{a.starve=0; if(a.food>.3) a.warned=false;}
+  if(a.stun>0){a.stun-=dt; a.mv=false; return;}
   if(a.food>0&&st.out){a.prod+=dt/st.prod; if(a.prod>=1){a.prod=0; dropProduct(st.out,a.x-a.dir*6,a.y+4,15); sfx(a.type==='hen'?'cluck':'quack');}}
   if(a.food>0&&st.meat&&!a.ready){a.prod+=dt/st.grow; if(a.prod>=1){a.prod=1; a.ready=true; sfx('grow');
     if(!G.meatTold){G.meatTold=true; toast(`Your ${st.name} is grown. Tap it to send it to the meat shop.`);}}}
@@ -1265,6 +1280,133 @@ function goalsMet(){
   for(const [k,n] of Object.entries(G.L.goals)){if(k==='money'){if(G.money<n) return false;} else if((G.collected[k]||0)<n) return false;}
   return true;
 }
+
+// ---------- Kerala chaos events ----------
+const EVENTS={
+  hartal:{name:'Hartal',note:'market closed',dur:35,msg:'Hartal! The market is closed for a while, so the auto can’t go.'},
+  monsoon:{name:'Monsoon',note:'free grass, goods spoil fast',dur:30,msg:'Monsoon! Grass grows by itself, but goods spoil twice as fast.'},
+  powercut:{name:'Power cut',note:'workshops stopped',dur:18,msg:'Power cut! The workshops stop until it comes back.'},
+  procession:{name:'Temple procession',note:'road blocked',dur:25,msg:'A temple procession is blocking the road. The auto has to wait.'},
+  coconut:{name:'Coconut falling',note:'',dur:3,msg:'Look out! A coconut is falling.'},
+};
+const EVENT_KEYS=Object.keys(EVENTS);
+const evOn=k=>!!(G&&G.ev&&G.ev.type===k);
+let TORCH={x:W/2,y:H/2};
+function startEvent(k){
+  G.ev={type:k,t:0,dur:EVENTS[k].dur};
+  if(k==='coconut'){const p=randField(40); G.ev.x=p.x; G.ev.y=p.y;}
+  toast(EVENTS[k].msg); sfx('ev_'+k);
+}
+function updEvents(dt){
+  if(!G.evOn) return;
+  if(G.ev){
+    const e=G.ev; e.t+=dt;
+    if(e.type==='monsoon'){e.acc=(e.acc||0)+dt; if(e.acc>.5){e.acc=0; for(let n=0;n<3;n++){const i=Math.floor(Math.random()*G.grass.length); G.gT[i]=Math.max(G.gT[i],.85);}}}
+    if(e.type==='coconut'&&!e.hit&&e.t>=.8){e.hit=true; fx('dust',e.x,e.y); sfx('thud');
+      G.animals.forEach(a=>{if(dist(a.x,a.y,e.x,e.y)<46) a.stun=3;}); dropProduct('coconut',e.x,e.y,15);}
+    if(e.t>=e.dur){G.ev=null; G.nextEv=(G.hard?40:65)*rnd(.8,1.25);}
+    return;
+  }
+  G.nextEv-=dt;
+  if(G.nextEv<=0){const pool=EVENT_KEYS.filter(k=>k!==G.lastEv); const k=pool[Math.floor(Math.random()*pool.length)]; G.lastEv=k; startEvent(k);}
+}
+// temple elephant (with nettipattam and parasol) or the wild tusker
+function drawElephant(g,x,y,dir,t,mv,o){
+  o=o||{}; const s=o.s||1;
+  g.save(); g.translate(x,y); g.scale(dir*s,s);
+  const sw=mv?Math.sin(t*6)*2.2:0, b=mv?Math.abs(Math.sin(t*6)):0;
+  g.fillStyle='rgba(20,15,5,.25)'; ell(g,0,4,34,6); g.fill();
+  g.fillStyle='#6f6f73'; [[-20,sw],[-10,-sw],[10,-sw],[20,sw]].forEach(([lx,d])=>{rr(g,lx-4.5+d*.4,-16,9,20,3); g.fill();});
+  g.translate(0,-b);
+  g.strokeStyle='#6f6f73'; g.lineWidth=2; g.beginPath(); g.moveTo(-29,-30); g.quadraticCurveTo(-35,-22,-33,-12); g.stroke();
+  g.fillStyle='#85858a'; ell(g,0,-27,30,20); g.fill();
+  if(o.decor){g.fillStyle='#b8322a'; rr(g,-18,-46,30,14,4); g.fill(); g.fillStyle='#e2b33c'; for(let k=0;k<5;k++){ell(g,-14+k*6.5,-33,1.6,1.6); g.fill();}}
+  g.fillStyle='#85858a'; ell(g,26,-34,15,16); g.fill();
+  g.save(); g.translate(17,-32); g.rotate(Math.sin(t*3)*.12); g.fillStyle='#77777c'; ell(g,0,0,10,14); g.fill(); g.restore();
+  g.strokeStyle='#85858a'; g.lineWidth=7; g.lineCap='round'; g.beginPath(); g.moveTo(36,-30); g.quadraticCurveTo(47,-14+sw*.6,40,-1); g.stroke();
+  g.strokeStyle='#f3ecd8'; g.lineWidth=3.2; g.beginPath(); g.moveTo(32,-24); g.quadraticCurveTo(44,-19,47,-27); g.stroke();
+  if(o.tusks===2){g.strokeStyle='#e6dcc2'; g.lineWidth=2.6; g.beginPath(); g.moveTo(29,-23); g.quadraticCurveTo(39,-17,42,-24); g.stroke();}
+  g.fillStyle='#1d1d1d'; ell(g,31,-39,1.6,1.6); g.fill();
+  if(o.angry){g.strokeStyle='#d8352a'; g.lineWidth=1.6; g.beginPath(); g.moveTo(27,-43); g.lineTo(34,-41); g.stroke();}
+  if(o.decor){
+    g.fillStyle='#e2b33c'; g.beginPath(); g.moveTo(22,-50); g.lineTo(36,-48); g.lineTo(38,-24); g.quadraticCurveTo(30,-18,26,-24); g.closePath(); g.fill();
+    g.fillStyle='#d8352a'; [[29,-44],[31,-37],[32,-30]].forEach(([a,c])=>{ell(g,a,c,1.5,1.5); g.fill();});
+    g.strokeStyle='#5b3a1f'; g.lineWidth=1.5; g.beginPath(); g.moveTo(-2,-47); g.lineTo(-2,-74); g.stroke();
+    g.fillStyle='#d8352a'; ell(g,-2,-76,15,6); g.fill(); g.fillStyle='#e2b33c'; g.fillRect(-17,-76,30,2);
+    g.fillStyle='#f4f0e6'; g.fillRect(-8,-56,9,10); g.fillStyle='#6b4a30'; ell(g,-3.5,-59,3.2,3.2); g.fill();
+  }
+  g.restore();
+}
+function drawDrummer(g,x,y,t){
+  const b=Math.abs(Math.sin(t*8))*1.2;
+  g.save(); g.translate(x,y-b);
+  g.fillStyle='rgba(20,15,5,.2)'; ell(g,0,b+2,6,2); g.fill();
+  g.fillStyle='#f4f0e6'; rr(g,-3.5,-14,7,14,2); g.fill(); g.fillStyle='#e2b33c'; g.fillRect(-3.5,-4,7,1.5);
+  g.fillStyle='#6b4a30'; ell(g,0,-17,3.2,3.2); g.fill();
+  g.fillStyle='#a8472a'; rr(g,-9,-12,7,9,2); g.fill(); g.strokeStyle='#e2b33c'; g.lineWidth=1; g.strokeRect(-9,-12,7,9);
+  g.strokeStyle='#5b3a1f'; g.lineWidth=1.2; g.beginPath(); g.moveTo(-1,-10); g.lineTo(-6,-14-Math.sin(t*16)*2); g.stroke();
+  g.restore();
+}
+function drawEvents(g,t){
+  const e=G&&G.ev; if(!e) return;
+  if(e.type==='monsoon'){
+    g.fillStyle='rgba(30,50,80,.16)'; g.fillRect(0,0,W,H);
+    g.strokeStyle='rgba(200,225,255,.55)'; g.lineWidth=1.2; g.beginPath();
+    for(let k=0;k<70;k++){const x=((k*53+t*260)%(W+60))-30, y=((k*97+t*520)%(H+40))-20; g.moveTo(x,y); g.lineTo(x-5,y+13);} g.stroke();
+  }
+  if(e.type==='procession'){
+    const q=Math.min(1,e.t/e.dur), x=W+70-(W+220)*q;
+    drawElephant(g,x,594,-1,t,true,{decor:true,tusks:2,s:.62});
+    drawDrummer(g,x+44,596,t); drawDrummer(g,x+58,594,t+.3); drawDrummer(g,x+72,596,t+.6);
+  }
+  if(e.type==='coconut'&&!e.hit){
+    const q=Math.min(1,e.t/.8);
+    g.fillStyle=`rgba(20,15,5,${.15+.25*q})`; ell(g,e.x,e.y+4,4+8*q,2+3*q); g.fill();
+    drawItem(g,'coconut',e.x,e.y-180*(1-q*q),1.3);
+  }
+  if(e.type==='powercut'){
+    const R=72;
+    g.save(); g.fillStyle='rgba(5,8,20,.88)'; g.beginPath(); g.rect(0,0,W,H); g.arc(TORCH.x,TORCH.y,R,0,Math.PI*2,true); g.fill('evenodd');
+    const gr=g.createRadialGradient(TORCH.x,TORCH.y,R*.55,TORCH.x,TORCH.y,R+1); gr.addColorStop(0,'rgba(5,8,20,0)'); gr.addColorStop(1,'rgba(5,8,20,.88)');
+    g.fillStyle=gr; g.beginPath(); g.arc(TORCH.x,TORCH.y,R+1,0,Math.PI*2); g.fill(); g.restore();
+  }
+  const E=EVENTS[e.type], left=Math.ceil(e.dur-e.t), label=E.note?`${E.name} · ${E.note} · ${left}s`:E.name;
+  g.font='800 12px '+FONT; const tw=g.measureText(label).width+22;
+  g.fillStyle='rgba(169,71,43,.95)'; rr(g,W/2-tw/2,FY+6,tw,22,11); g.fill();
+  g.strokeStyle='#e2b33c'; g.lineWidth=1.5; g.stroke();
+  g.fillStyle='#fff6d8'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(label,W/2,FY+17.5);
+}
+
+// ---------- meme soundboard ----------
+// Tap Say to play one of your clips. In co-op it plays on both phones with a bubble; Kuttan sometimes answers.
+const SAY=[
+  {id:'ithokke',label:'Ithokke enth',url:'sounds/win-ithokke-enth.mp3'},
+  {id:'dashnoolam',label:'Dashnoolam',url:'sounds/win-dashnoolam.mp3'},
+  {id:'marabhootham',label:'Marabhootham',url:'sounds/attack.mp3'},
+  {id:'paripadi',label:'Paripadi Saslim',url:'sounds/fail-paripadi-saslim.mp3'},
+  {id:'thherneda',label:'Thherneda',url:'sounds/fail-thherneda.mp3'},
+  {id:'pedikalleda',label:'Pedikalleda',url:'sounds/eaten-pedikalleda.mp3'},
+  {id:'oops',label:'Oops',url:'sounds/fail.mp3'},
+  {id:'punch',label:'Punch',url:'sounds/punch.mp3'},
+];
+let sayCool=0, bubbleTimer=0;
+function playSay(id,who){
+  const s=SAY.find(x=>x.id===id); if(!s) return;
+  if(SAVE.sfx&&audio()){const b=BUFURL[s.url]; if(b) playBuf(b,SFXG,.85); else playSfx('pop');}
+  const el=$('#sayBubble'); el.textContent=`${who}: ${s.label}`; el.hidden=false;
+  clearTimeout(bubbleTimer); bubbleTimer=setTimeout(()=>{el.hidden=true;},2600);
+}
+function say(id){
+  const t=performance.now(); if(t<sayCool) return; sayCool=t+1200;
+  playSay(id,'You');
+  if(coop()) NET.send({t:'say',id});
+  else if(BOT.on&&Math.random()<.35){const others=SAY.filter(s=>s.id!==id&&s.id!=='punch'), r=others[Math.floor(Math.random()*others.length)]; setTimeout(()=>{if(BOT.on) playSay(r.id,'Kuttan');},1400);}
+}
+$('#btnSay').onclick=()=>{
+  audio(); const p=$('#sayPanel');
+  if(p.hidden){$('#sayGrid').innerHTML=SAY.map(s=>`<button data-say="${s.id}">${s.label}</button>`).join(''); p.hidden=false;} else p.hidden=true;
+};
+$('#sayGrid').addEventListener('click',e=>{const b=e.target.closest('[data-say]'); if(!b) return; say(b.dataset.say); $('#sayPanel').hidden=true;});
 
 // ---------- input ----------
 function onTap(x,y,remote){
@@ -1412,6 +1554,7 @@ function render(){
   G.boats.forEach(b=>{const p=b.t/b.dur; let x;
     if(p<.4){const q=p/.4; x=-60+(JETTY+60)*(1-Math.pow(1-q,2));} else if(p<.55) x=JETTY; else{const q=(p-.55)/.45; x=JETTY+(W+80-JETTY)*q*q;}
     drawBoat(g,x+8,b.spawned?null:b.cargo,t);});
+  drawEvents(g,t);
   // effects
   G.fx.forEach(f=>drawFx(f));
   G.floats.forEach(f=>{const a=1-f.t/1.4; g.globalAlpha=Math.max(0,a); g.font='800 18px '+FONT; g.textAlign='center'; g.lineWidth=4; g.strokeStyle='rgba(40,20,10,.7)';
@@ -1509,7 +1652,7 @@ const OVS=['#ovMap','#ovIntro','#ovMarket','#ovPause','#ovResult','#ovShop','#ov
 const isPaused=()=>OVS.some(id=>!$(id).hidden);
 const BEHIND=['#hud','#stageWrap','#buybar'];
 function syncInert(){const any=OVS.some(id=>!$(id).hidden); BEHIND.forEach(s=>{$(s).inert=any;});}
-function show(id){const el=$(id); el.hidden=false; syncInert(); const f=el.querySelector('button:not([disabled])'); if(f&&matchMedia('(pointer:fine)').matches) f.focus({preventScroll:true});}
+function show(id){const el=$(id); el.hidden=false; $('#sayPanel').hidden=true; syncInert(); const f=el.querySelector('button:not([disabled])'); if(f&&matchMedia('(pointer:fine)').matches) f.focus({preventScroll:true});}
 function hide(id){$(id).hidden=true; syncInert();}
 document.addEventListener('keydown',e=>{if(e.key!=='Escape') return; if(!$('#ovMarket').hidden) $('#mkClose').click(); else if(!$('#ovShop').hidden) $('#shClose').click(); else if(!$('#ovPause').hidden) $('#psResume').click(); else if(G&&G.state==='play'&&!isPaused()) $('#btnPause').click();});
 const ICON={};
@@ -1579,7 +1722,8 @@ function renderMarket(){
   $('#mkCargo').innerHTML=away?'':(ck.length?ck.map(k=>`<div class="mrow"><img src="${ICON[k]}" alt=""><div class="mname">${ITEMS[k].name} <span class="q">×${T.cargo[k]}</span></div><span class="mprice">₹${(T.cargo[k]*ITEMS[k].price).toLocaleString('en-IN')}</span><button class="sbtn alt" data-unload="${k}">−1</button></div>`).join(''):'<p class="empty">The auto is empty. Load goods from the storehouse above.</p>');
   if(away){const left=Math.ceil(autoTrip()-T.t); $('#mkStatus').textContent=T.sold?`Sold. The auto-rickshaw will be back about ${left}s after you return to the farm.`:`The auto-rickshaw is on its way to the market and will be back about ${left}s after you return to the farm.`;}
   else $('#mkStatus').textContent=cu?`This load sells for ₹${cargoValue().toLocaleString('en-IN')}.`:'';
-  $('#mkGo').disabled=away||cu===0;
+  $('#mkGo').disabled=away||cu===0||evOn('hartal');
+  if(evOn('hartal')&&!away) $('#mkStatus').textContent=`Hartal: the market is closed for about ${Math.ceil(G.ev.dur-G.ev.t)}s.`;
   const nl=autoLvl()+1, up=$('#mkUp'); up.hidden=nl>3;
   if(nl<=3){up.textContent=`Upgrade to ${UPG.auto.names[nl]} · ₹${AUTO_UP_COST[nl].toLocaleString('en-IN')} (this level)`; up.disabled=away||G.money<AUTO_UP_COST[nl];}
 }
@@ -1598,9 +1742,10 @@ function marketAction(a,k){
 }
 function marketGo(){
   const T=G.truck; if(T.state!=='home'||!cargoUsed()) return;
+  if(evOn('hartal')){toast('Hartal today. The market is closed, so the auto can’t go yet.'); sfx('err'); return;}
   T.state='going'; T.t=0; T.sold=false; sfx('depart'); toast('The auto is off to the market.');
 }
-const marketSig=()=>JSON.stringify([G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
+const marketSig=()=>JSON.stringify([evOn('hartal'),G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
 $('#ovMarket').addEventListener('click',e=>{
   const b=e.target.closest('button[data-load],button[data-loadall],button[data-unload]'); if(!b||!G) return;
   const a=b.dataset.load?'load':b.dataset.loadall?'loadall':'unload', k=b.dataset.load||b.dataset.loadall||b.dataset.unload;
@@ -1680,7 +1825,9 @@ $('#shRows').addEventListener('click',e=>{const b=e.target.closest('[data-up]');
   if(SAVE.coins>=cost&&SAVE.up[k]<3){SAVE.coins-=cost; SAVE.up[k]++; persist(); sfx(k==='auto'?'depart':'cash'); renderShop();}});
 
 cv.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
-cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect(); asActor('local',()=>onTap((e.clientX-r.left)/r.width*W,(e.clientY-r.top)/r.height*H));});
+const torchAt=e=>{const r=cv.getBoundingClientRect(); TORCH={x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H};};
+cv.addEventListener('pointermove',torchAt);
+cv.addEventListener('pointerdown',e=>{torchAt(e); const r=cv.getBoundingClientRect(); asActor('local',()=>onTap((e.clientX-r.left)/r.width*W,(e.clientY-r.top)/r.height*H));});
 
 // ---------- co-op (two phones, one farm) ----------
 // The host runs the simulation; the guest sends its taps and shows the host's state, sent about 12 times a second.
@@ -1835,6 +1982,7 @@ function onNetClose(){
 function onNet(d){
   if(!d||typeof d!=='object') return;
   if(d.t==='bye'){onNetClose(); return;}
+  if(d.t==='say'&&SAY.some(x=>x.id===d.id)){playSay(d.id,'Friend'); return;}
   if(NET.role==='host'){
     if(!G) return;
     asActor('remote',()=>{
@@ -1862,6 +2010,7 @@ function snap(){
     c:G.cages.map(c=>[r1(c.x),r1(c.y),r1(c.t),c.max]),
     b:G.boats.map(b=>[b.id,r1(b.t),b.dur,b.cargo,b.spawned?1:0]),
     ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue]),
+    ev:G.ev?[EVENT_KEYS.indexOf(G.ev.type),r1(G.ev.t),G.ev.dur,r1(G.ev.x||0),r1(G.ev.y||0),G.ev.hit?1:0]:0,
     tk:[T.state==='home'?0:1,r1(T.t),T.cargo,T.sold?1:0],
     s:G.store,co:G.collected,fr:G.failReason||'',ev:NET.ev.splice(0)};
 }
@@ -1884,6 +2033,7 @@ function applySnap(d){
   const bOld={}; G.boats.forEach(b=>{bOld[b.id]=b;});
   G.boats=d.b.map(([id,t,dur,cargo,sp])=>Object.assign(bOld[id]||{id},{t,dur,cargo,spawned:!!sp}));
   d.ws.forEach((r,i)=>{const w=G.ws[i]; if(w&&r){w.built=!!r[0]; w.busy=!!r[1]; w.t=r[2]; w.dur=r[3]; w.queue=r[4];}});
+  G.ev=d.ev?{type:EVENT_KEYS[d.ev[0]],t:d.ev[1],dur:d.ev[2],x:d.ev[3],y:d.ev[4],hit:!!d.ev[5]}:null;
   const T=G.truck; T.state=d.tk[0]?'going':'home'; T.t=d.tk[1]; T.cargo=d.tk[2]; T.sold=!!d.tk[3];
   G.store=d.s; G.collected=d.co;
   if(G.state==='intro'&&d.st==='play'){hide('#ovIntro'); G.state='play';}
@@ -1901,7 +2051,8 @@ function guestTick(dt){
   for(const o of G.animals.concat(G.jackals,G.monkeys)){if(o.tx===undefined) continue; o.x+=(o.tx-o.x)*k; o.y+=(o.ty-o.y)*k; if(o.mv) o.walk+=dt;}
   if(G.state==='play'){
     G.products.forEach(p=>{p.age+=dt; p.life-=dt;});
-    const T=G.truck; if(T.state==='going'){T.t=Math.min(T.t+dt,autoTrip()); truckPulse(T,T.t/autoTrip(),dt);}
+    if(G.ev) G.ev.t+=dt;
+    const T=G.truck; if(T.state==='going'&&!evOn('procession')){T.t=Math.min(T.t+dt,autoTrip()); truckPulse(T,T.t/autoTrip(),dt);}
     G.boats.forEach(b=>{b.t+=dt; boatPulse(b,dt);});
     G.ws.forEach(w=>{if(w&&w.busy) w.t=Math.min(w.t+dt,w.dur);});
     if(G.wellT>0) G.wellT=Math.max(0,G.wellT-dt);
@@ -1973,7 +2124,7 @@ function botChoose(){
     }
   }
   if(G.water>=2){const tr=G.trees.find(t=>(t.wet||0)<=0); if(tr) return botTap(()=>G.trees.includes(tr)?[tr.x,tr.y-20]:null,'Watering the trees');}
-  if(G.truck.state==='home'){
+  if(G.truck.state==='home'&&!evOn('hartal')){
     const keep=botKeep(), sell=Object.keys(G.store).filter(k=>G.store[k]>0&&!keep[k]), n=sell.reduce((a,k)=>a+G.store[k],0);
     const needCash=G.L.goals.money&&G.money<G.L.goals.money;
     if(n>0&&(free<=2||n>=autoCap()*.6||(needCash&&n>=2)))

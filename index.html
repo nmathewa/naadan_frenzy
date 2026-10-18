@@ -355,9 +355,9 @@ const bg=document.createElement('canvas'), bctx=bg.getContext('2d');
 let S=1, DPR=1;
 
 // ---------- save ----------
-const APP_VERSION='v23';
+const APP_VERSION='v24';
 // The online game server (Cloudflare). Empty: fall back to the old phone-to-phone link. ?server=<url> overrides it.
-const DEFAULT_SERVER='';
+const DEFAULT_SERVER='https://naadan-frenzy-server.nmanirmal.workers.dev';
 const SERVER_URL=(()=>{try{const q=new URLSearchParams(location.search).get('server'); if(q) return q;}catch(e){} return DEFAULT_SERVER;})();
 const SKEY='naadan-frenzy-save-v1';
 const UNLOCK_ALL=true; // testing: every level is playable. Set to false to restore normal unlocking.

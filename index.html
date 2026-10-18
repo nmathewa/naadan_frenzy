@@ -123,6 +123,14 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .segb[aria-pressed="true"]{background:#1f9fae;color:#fff;box-shadow:none}
 .join-row input{flex:1;min-width:0;font:800 26px var(--display);letter-spacing:.2em;text-transform:uppercase;text-align:center;padding:6px 8px;border-radius:10px;border:2px solid var(--ink-soft);background:#fffaf0;color:var(--ink);-webkit-user-select:text;user-select:text}
 .join-row input:focus-visible{outline:3px solid var(--kasavu);outline-offset:1px}
+.name-row{display:flex;align-items:center;gap:10px;margin:10px 0 4px;font-weight:700}
+.name-row input{flex:1;min-width:0;font:700 18px var(--display);padding:6px 10px;border-radius:10px;border:2px solid var(--ink-soft);background:#fffaf0;color:var(--ink);-webkit-user-select:text;user-select:text}
+.name-row input:focus-visible{outline:3px solid var(--kasavu);outline-offset:1px}
+.players{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.players li{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#fffaf0;font-weight:700;font-size:16px}
+.players .dot{width:16px;height:16px;border-radius:50%;flex:none}
+.players .tag{margin-left:auto;font-size:13px;font-weight:600;color:var(--ink-soft)}
+.players li.off{opacity:.55}
 .map-sound{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 6px}
 .chip{border:0;border-radius:20px;padding:8px 14px;min-height:40px;background:rgba(0,0,0,.25);color:var(--cream);font-weight:700;font-size:13px}
 .chip[aria-pressed="false"]{color:#9fb59a;text-decoration:line-through}
@@ -281,10 +289,11 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
       <div class="panel">
         <p class="eyebrow">Co-op</p>
         <h2>Play together</h2>
-        <p class="note">Farm with Kuttan, a computer helper, or with a friend on another phone. Everyone taps on the same farm to reach the goals together.</p>
+        <p class="note" id="cpIntro">Farm with Kuttan, a computer helper, or with up to 2 friends on their own phones. Everyone taps on the same farm to reach the goals together.</p>
+        <div class="name-row" id="cpNameRow"><label for="cpName">Your name</label><input id="cpName" maxlength="14" autocomplete="off" spellcheck="false" placeholder="Player"></div>
         <div class="stack" id="coopMenu">
           <button class="btn alt" id="cpBot">Farm with Kuttan (computer helper)</button>
-          <button class="btn" id="cpHost">Host a farm for a friend</button>
+          <button class="btn" id="cpHost">Start a farm for friends</button>
           <button class="btn ghost" id="cpJoinOpen">Join a friend's farm</button>
         </div>
         <div id="coopBot" hidden>
@@ -300,6 +309,13 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
         <div id="coopJoin" hidden>
           <h3><label for="cpInput">Room code</label></h3>
           <div class="join-row"><input id="cpInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn" id="cpJoin">Join</button></div>
+        </div>
+        <div id="coopRoom" hidden>
+          <h3>Farm code</h3>
+          <div class="code" id="crCode">····</div>
+          <ul class="players" id="crPlayers"></ul>
+          <p class="note" id="crNote"></p>
+          <button class="btn ghost wide" id="crLeave">Leave this farm</button>
         </div>
         <p class="note" id="cpStatus" role="status"></p>
         <details class="cp-details"><summary>Connection details</summary><ol id="cpLog"></ol></details>
@@ -339,7 +355,10 @@ const bg=document.createElement('canvas'), bctx=bg.getContext('2d');
 let S=1, DPR=1;
 
 // ---------- save ----------
-const APP_VERSION='v22';
+const APP_VERSION='v23';
+// The online game server (Cloudflare). Empty: fall back to the old phone-to-phone link. ?server=<url> overrides it.
+const DEFAULT_SERVER='';
+const SERVER_URL=(()=>{try{const q=new URLSearchParams(location.search).get('server'); if(q) return q;}catch(e){} return DEFAULT_SERVER;})();
 const SKEY='naadan-frenzy-save-v1';
 const UNLOCK_ALL=true; // testing: every level is playable. Set to false to restore normal unlocking.
 function defSave(){return{unlocked:1,stars:{},coins:0,up:{well:0,store:0,auto:0,ws:0},music:true,sfx:true,nights:true}}
@@ -1492,9 +1511,11 @@ function renderHUD(){
   document.querySelectorAll('.buy').forEach(b=>{b.disabled=G.money<BUY[b.dataset.buy].cost;});
   const hh=$('#hud').offsetHeight; if(hh!==renderHUD.h){fit(); renderHUD.h=$('#hud').offsetHeight;}
 }
-function startLevel(i){
+function startLevel(i,fromNet){
+  // Online, the server starts levels: the leader asks for one, and everyone starts when the server says so.
+  if(NET.online&&!fromNet){if(NET.lead) NET.send({t:'start',li:i,up:SAVE.up,nights:SAVE.nights!==false}); return;}
   if(NET.role==='host') NET.send({t:'start',li:i});
-  G=ENG.newGame(i,{hard:coop()||BOT.armed,up:NET.role==='guest'?(NET.up||SAVE.up):SAVE.up,nights:SAVE.nights!==false,bot:BOT.armed&&!NET.role?{skill:BOT.skill}:null});
+  G=ENG.newGame(i,{hard:coop()||BOT.armed,up:NET.role==='guest'?(NET.up||SAVE.up):SAVE.up,nights:NET.online?NET.nights:SAVE.nights!==false,bot:BOT.armed&&!NET.role?{skill:BOT.skill}:null});
   hudSig=''; setMusic(LEVELS[i].rush?'rush':'play');
   $('#lvlName').textContent=`${i+1}. ${G.L.name}${G.L.hard?' · Hard':''}`;
   $('#buybar').innerHTML=G.L.buy.map(k=>`<button class="buy" data-buy="${k}" aria-label="Buy ${BUY[k].name} for ₹${BUY[k].cost}"><img src="${ICON['buy_'+k]}" alt=""><span class="nm">${G.L.buy.length>4&&BUY[k].short||BUY[k].name}</span><span class="pr">₹${BUY[k].cost}</span></button>`).join('');
@@ -1503,7 +1524,7 @@ function startLevel(i){
   $('#inName').textContent=G.L.name; $('#inHard').hidden=!G.L.hard;
   $('#inGoals').innerHTML=Object.entries(G.L.goals).map(([k,n])=>k==='money'?`<li><img src="${ICON.money}" alt="">Have ₹${n.toLocaleString('en-IN')}</li>`:`<li><img src="${ICON[k]}" alt="">Collect ${n} ${plural(ITEMS[k].name.toLowerCase(),n)}</li>`).join('');
   $('#inTip').textContent=G.L.tip;
-  $('#inStart').hidden=NET.role==='guest'; $('#inWait').hidden=NET.role!=='guest';
+  $('#inStart').hidden=follower(); $('#inWait').hidden=!follower(); $('#inWait').textContent=`Waiting for ${pickerName().replace('Your friend','your friend')} to start…`;
   $('#inTimes').textContent=`Gold medal under ${fmtT(G.L.gold)}, silver under ${fmtT(G.L.silver)}. Time limit ${fmtT(timeLimit(G.L))}.${G.dn?' Night falls during this level; the clock pauses at night.':''}`;
   show('#ovIntro'); renderHUD(); fit();
 }
@@ -1543,8 +1564,8 @@ $('#ovMarket').addEventListener('click',e=>{
 $('#mkClose').onclick=()=>hide('#ovMarket');
 $('#mkGo').onclick=()=>{if(!G) return; if(NET.role==='guest'){NET.send({t:'go'}); hide('#ovMarket'); return;} ENG.input(ME,{t:'go'}); hide('#ovMarket');};
 $('#buybar').addEventListener('click',e=>{const b=e.target.closest('.buy'); if(!b||!G||G.state!=='play'||isPaused()) return; audio(); if(NET.role==='guest') NET.send({t:'buy',k:b.dataset.buy}); else ENG.input(ME,{t:'buy',k:b.dataset.buy});});
-$('#inStart').onclick=()=>{hide('#ovIntro'); ENG.start(); audio();};
-$('#btnPause').onclick=()=>{if(!G||G.state==='won') return; $('#psName').textContent=G.L.name; syncSoundUI(); const c=coop(); $('#psEyebrow').textContent=c?'Menu':'Paused'; $('#psResume').textContent=c?'Back to the farm':'Resume'; $('#psNote').hidden=!c; $('#psLeave').hidden=!c&&!(G.bot&&G.bot.on); $('#psLeave').textContent=c?'Leave co-op game':'Send Kuttan home'; $('#psRestart').hidden=NET.role==='guest'; $('#psMap').hidden=NET.role==='guest'; show('#ovPause');};
+$('#inStart').onclick=()=>{audio(); if(NET.online){NET.send({t:'play'}); return;} hide('#ovIntro'); ENG.start();};
+$('#btnPause').onclick=()=>{if(!G||G.state==='won') return; $('#psName').textContent=G.L.name; syncSoundUI(); const c=coop(); $('#psEyebrow').textContent=c?'Menu':'Paused'; $('#psResume').textContent=c?'Back to the farm':'Resume'; $('#psNote').hidden=!c; $('#psLeave').hidden=!c&&!(G.bot&&G.bot.on); $('#psLeave').textContent=c?'Leave co-op game':'Send Kuttan home'; $('#psRestart').hidden=follower(); $('#psMap').hidden=follower(); show('#ovPause');};
 $('#psResume').onclick=()=>hide('#ovPause');
 $('#psRestart').onclick=()=>startLevel(G.li);
 $('#psMap').onclick=()=>goMap();
@@ -1570,8 +1591,8 @@ function showResult(){
   $('#rsCoins').textContent=`+${coins} gold coins`;
   const last=i===LEVELS.length-1, regionEnd=last||regionOf(i+1)!==regionOf(i);
   $('#rsNote').textContent=regionEnd?(regionOf(i)===1?'Kuttanad is done. Next: the Idukki high range, with jackfruit, tapioca, pigs and buffalo.':'The high range is done. More regions are coming.'):m<3?`Finish under ${fmtT(m===1?G.L.silver:G.L.gold)} for a better medal. Spend gold coins on upgrades from the map.`:'Spend gold coins on upgrades from the map.';
-  const g=NET.role==='guest'; $('#rsNext').hidden=last||g; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
-  if(g) $('#rsNote').textContent='Your friend picks what to play next. '+$('#rsNote').textContent;
+  const g=follower(); $('#rsNext').hidden=last||g; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
+  if(g) $('#rsNote').textContent=`${pickerName()} picks what to play next. `+$('#rsNote').textContent;
   $('#rsRace').hidden=m<3;
   show('#ovResult'); sfx('ding');
 }
@@ -1581,15 +1602,15 @@ function showFail(){
   $('#rsEyebrow').textContent='Level failed'; $('#rsName').textContent=G.L.name;
   const md=$('#rsMedal'); md.textContent='Failed'; md.style.background='var(--laterite)'; md.style.color='var(--cream)';
   $('#rsTime').textContent='Time '+fmtT(G.t); $('#rsCoinPill').hidden=true;
-  const g=NET.role==='guest';
-  $('#rsNote').textContent=(g?'Your friend decides whether to retry. ':'')+(G.failReason||'');
+  const g=follower();
+  $('#rsNote').textContent=(g?`${pickerName()} decides whether to retry. `:'')+(G.failReason||'');
   $('#rsReplay').textContent='Retry'; $('#rsNext').hidden=true; $('#rsReplay').hidden=g; $('#rsMap').hidden=g; $('#rsLeave').hidden=!g;
   show('#ovResult');
 }
 $('#rsReplay').onclick=()=>startLevel(G.li);
 $('#rsNext').onclick=()=>startLevel(G.li+1);
 
-function goMap(){if(NET.role==='host') NET.send({t:'map'}); setMusic('map'); G=null; OVS.forEach(hide); renderMap(); show('#ovMap'); fit();}
+function goMap(fromNet){if(NET.role==='host'||(NET.online&&NET.lead&&!fromNet)) NET.send({t:'map'}); setMusic('map'); G=null; OVS.forEach(hide); renderMap(); show('#ovMap'); fit();}
 function goalSummary(L){return Object.entries(L.goals).map(([k,n])=>k==='money'?'₹'+n.toLocaleString('en-IN'):n+' '+plural(ITEMS[k].name.toLowerCase(),n)).join(' · ');}
 function renderMap(){
   if(typeof renderCoopBar==='function') renderCoopBar();
@@ -1597,7 +1618,7 @@ function renderMap(){
   $('#levels').innerHTML=LEVELS.map((L,i)=>{const locked=!UNLOCK_ALL&&i>=SAVE.unlocked, st=SAVE.stars[i]||0;
     return (i===0||regionOf(i)!==regionOf(i-1)?`<p class="region">${REGIONS[regionOf(i)]}</p>`:'')+`<button class="lvl ${i%2?'r':'l'}" data-lvl="${i}" ${locked?'disabled':''} aria-label="Level ${i+1}, ${L.name}${locked?', locked':st?', '+MEDAL_NAME[st]+' medal':''}"><span class="num">${i+1}</span><span class="lt"><b>${L.name}</b><small>${goalSummary(L)}</small></span><span class="medal m${st}"></span></button>`;}).join('');
 }
-$('#levels').addEventListener('click',e=>{const b=e.target.closest('.lvl'); if(!b||b.disabled) return; if(NET.role==='guest'){toast('Your friend picks the level while you play together.'); return;} audio(); startLevel(+b.dataset.lvl);});
+$('#levels').addEventListener('click',e=>{const b=e.target.closest('.lvl'); if(!b||b.disabled) return; if(follower()){toast(`${pickerName()} picks the level while you play together.`); return;} audio(); startLevel(+b.dataset.lvl);});
 let resetArmed=false;
 $('#btnReset').onclick=()=>{
   if(!resetArmed){resetArmed=true; $('#btnReset').textContent='Tap again to erase all progress'; setTimeout(()=>{resetArmed=false; $('#btnReset').textContent='Reset progress';},3500); return;}
@@ -1622,9 +1643,12 @@ cv.addEventListener('pointerdown',e=>{torchAt(e); const r=cv.getBoundingClientRe
 // ---------- co-op (two phones, one farm) ----------
 // The host runs the simulation; the guest sends its taps and shows the host's state, sent about 12 times a second.
 const PEER_PREFIX='naadan-frenzy-coop-', CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const NET={log:[],relays:[],role:null,peer:null,conn:null,acc:0,ev:[],up:null,code:'',mkSig:'',
+const NET={log:[],relays:[],role:null,peer:null,conn:null,acc:0,ev:[],up:null,code:'',mkSig:'',online:false,lead:false,nights:true,
   send(m){if(this.conn&&this.conn.open){try{this.conn.send(m);}catch(e){}}}};
 const coop=()=>NET.role==='host'||NET.role==='guest';
+// Players who wait for someone else to pick levels: a phone-to-phone guest, or an online player who is not the leader.
+const follower=()=>NET.role==='guest'&&!(NET.online&&NET.lead);
+const pickerName=()=>NET.online?leaderName():'Your friend';
 function loadPeer(){
   if(window.Peer) return Promise.resolve();
   return new Promise((res,rej)=>{const s=document.createElement('script'); s.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('load')); document.head.appendChild(s);});
@@ -1638,6 +1662,8 @@ function netErrorText(err){
 function coopStatus(msg){$('#cpStatus').textContent=msg||'';}
 function openCoop(){
   $('#coopMenu').hidden=coop(); $('#coopHost').hidden=NET.role!=='hosting'; $('#coopJoin').hidden=true; $('#coopBot').hidden=true;
+  $('#coopRoom').hidden=!NET.online; $('#cpNameRow').hidden=coop(); $('#cpIntro').hidden=NET.online; $('#cpName').value=SAVE.name||'';
+  if(NET.online) renderOnlineRoom();
   if(!coop()&&NET.role!=='hosting') coopStatus('');
   show('#ovCoop');
 }
@@ -1724,6 +1750,8 @@ function onHostConnected(conn){
   if(G) NET.send({t:'start',li:G.li});
 }
 async function hostGame(){
+  saveName();
+  if(SERVER_URL){onlineHost(); return;}
   if(NET.role==='hosting'&&NET.code){openCoop(); return;}
   BOT.armed=false; leaveCoop(true);
   $('#coopMenu').hidden=true; $('#coopJoin').hidden=true; $('#coopHost').hidden=false;
@@ -1747,6 +1775,8 @@ async function joinGame(){
   BOT.armed=false;
   const code=$('#cpInput').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(code.length!==4){coopStatus('Enter the 4-letter room code from your friend.'); return;}
+  saveName();
+  if(SERVER_URL){onlineJoin(code); return;}
   coopStatus('Connecting…'); $('#cpJoin').disabled=true;
   leaveCoop(true); NET.log=[]; netLog(`Version ${APP_VERSION} · joining ${code}`);
   let done=false;
@@ -1772,10 +1802,11 @@ async function joinGame(){
 }
 function wireConn(conn){conn.on('data',onNet); conn.on('close',onNetClose); conn.on('error',onNetClose);}
 function leaveCoop(quiet){
+  if(NET.online||ONLINE.want) onlineQuit(true);
   if(NET.conn){NET.send({t:'bye'}); try{NET.conn.close();}catch(e){}}
   if(NET.peer){try{NET.peer.destroy();}catch(e){}}
   (NET.relays||[]).forEach(c=>setTimeout(()=>{try{c.end(true);}catch(e){}},200));
-  NET.role=null; NET.conn=null; NET.peer=null; NET.relays=[]; NET.relayConn=null; NET.code=''; NET.up=null; NET.ev=[];
+  NET.role=null; NET.conn=null; NET.peer=null; NET.relays=[]; NET.relayConn=null; NET.code=''; NET.up=null; NET.ev=[]; NET.online=false; NET.lead=false;
   if(!quiet){renderCoopBar(); renderMap();}
 }
 function onNetClose(){
@@ -1843,13 +1874,112 @@ function guestTick(dt){
     if(G.wellT>0) G.wellT=Math.max(0,G.wellT-dt);
   }
 }
+// ---------- online farm: up to 3 phones through the game server ----------
+// The server runs the farm. Every phone (the leader too) is a "guest" here: it sends taps and draws the
+// server's state, about 12 times a second. The leader also picks levels and presses Start.
+const ONLINE={ws:null,code:'',you:'',leader:'',players:[],want:false,joined:false,creating:false,lost:0,retry:null,ping:null,rtt:0,tries:0};
+function myName(){return (SAVE.name||'').trim()||'Player';}
+function onlinePid(){if(!SAVE.pid){SAVE.pid=Math.random().toString(36).slice(2,10)+Date.now().toString(36); persist();} return SAVE.pid;}
+function serverBase(){return SERVER_URL.replace(/\/+$/,'').replace(/^http(s?):/,'ws$1:');}
+const nameOf=id=>{const p=ONLINE.players.find(p=>p.id===id); return p?p.name:'Friend';};
+const leaderName=()=>nameOf(ONLINE.leader);
+function onlineOpen(code,create){
+  ONLINE.code=code; ONLINE.want=true; ONLINE.creating=!!create;
+  const url=`${serverBase()}/ws/${code}?name=${encodeURIComponent(myName())}&pid=${onlinePid()}&v=${NaadanCore.VERSION}${create?'&create=1':''}`;
+  let ws; try{ws=new WebSocket(url);}catch(e){onlineFail('Could not reach the game server. Check your internet and try again.'); return;}
+  ONLINE.ws=ws;
+  ws.onopen=()=>{if(ONLINE.ws===ws) netLog('Connected to the game server');};
+  ws.onmessage=e=>{if(ONLINE.ws!==ws) return; let d; try{d=JSON.parse(e.data);}catch(x){return;} onOnline(d);};
+  ws.onclose=ev=>{if(ONLINE.ws!==ws) return; ONLINE.ws=null; onlineDropped(ev);};
+}
+function onlineSend(m){const ws=ONLINE.ws; if(ws&&ws.readyState===1){try{ws.send(JSON.stringify(m));}catch(e){}}}
+function newCode(){return Array.from({length:4},()=>CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join('');}
+function onlineHost(){
+  BOT.armed=false; leaveCoop(true); NET.log=[]; ONLINE.tries=0;
+  const code=newCode(); netLog(`Version ${APP_VERSION} · starting farm ${code}`);
+  coopStatus('Starting your farm…'); onlineOpen(code,true);
+}
+function onlineJoin(code){
+  BOT.armed=false; leaveCoop(true); NET.log=[]; netLog(`Version ${APP_VERSION} · joining ${code}`);
+  coopStatus('Connecting…'); $('#cpJoin').disabled=true; onlineOpen(code,false);
+}
+function onlineFail(msg){
+  ONLINE.want=false; $('#cpJoin').disabled=false; coopStatus(msg); netLog(msg);
+}
+const ONLINE_ERR={
+  nofarm:'No farm found with that code. Check the code with your friend.',
+  full:'That farm already has 3 players.',
+  badcode:'That code is not valid. Codes are 4 letters and numbers.',
+  version:'The game was updated. Reload this page, and ask your friends to reload too.',
+};
+function onOnline(d){
+  if(d.t==='error'){
+    if(d.code==='taken'&&ONLINE.creating&&ONLINE.tries++<5){onlineOpen(newCode(),true); return;}
+    const was=ONLINE.joined; onlineQuit();
+    if(was){goMap(true); toast(ONLINE_ERR[d.code]||d.msg||'Lost the farm.');}
+    else onlineFail(ONLINE_ERR[d.code]||d.msg||'Could not join that farm.');
+    return;
+  }
+  if(d.t==='room') return onlineRoom(d);
+  if(!ONLINE.joined) return;
+  if(d.t==='start'&&LEVELS[d.li]){NET.up=d.opts&&d.opts.up||null; NET.nights=!d.opts||d.opts.nights!==false; startLevel(d.li,true); return;}
+  if(d.t==='s'){if(G&&G.li===d.li) applySnap(d); return;}
+  if(d.t==='say'){if(SAY.some(x=>x.id===d.id)) playSay(d.id,nameOf(d.from)); return;}
+  if(d.t==='pong'&&typeof d.c==='number'){ONLINE.rtt=Math.round(performance.now()-d.c); renderOnlineRoom();}
+}
+function onlineRoom(d){
+  const first=!ONLINE.joined, wasLead=NET.lead;
+  ONLINE.code=d.code; ONLINE.you=d.you; ONLINE.leader=d.leader; ONLINE.players=d.players||[];
+  if(first){
+    ONLINE.joined=true; ONLINE.creating=false;
+    NET.role='guest'; NET.online=true; NET.code=d.code;
+    NET.conn={open:true,send:m=>onlineSend(m),close:()=>onlineQuit(true)};
+    clearInterval(ONLINE.ping); ONLINE.ping=setInterval(()=>onlineSend({t:'ping',c:performance.now()}),4000);
+    onlineSend({t:'ping',c:performance.now()});
+    $('#cpJoin').disabled=false; coopStatus(''); sfx('cash');
+    if(d.you!==d.leader) toast(`You joined ${nameOf(d.leader)}'s farm. ${nameOf(d.leader)} picks the level.`);
+  }else if(ONLINE.lost){ONLINE.lost=0; NET.conn.open=true; toast('Back online.');}
+  NET.lead=d.leader===d.you;
+  if(!first&&NET.lead&&!wasLead) toast('You lead the farm now: you pick the levels.');
+  if(d.phase==='lobby'&&G) goMap(true);
+  renderOnlineRoom(); renderCoopBar(); if(!G) renderMap();
+}
+function onlineDropped(ev){
+  if(!ONLINE.want) return;
+  if(ev.code===4000) return; // refused: the error frame said why
+  if(!ONLINE.joined){onlineFail('Could not reach the game server. Check your internet and try again.'); return;}
+  if(ev.code===4001){onlineQuit(); goMap(true); toast('This farm was opened on another tab or phone.'); return;}
+  if(!ONLINE.lost){ONLINE.lost=Date.now(); NET.conn.open=false; toast('Connection lost. Reconnecting…'); renderOnlineRoom();}
+  if(Date.now()-ONLINE.lost>45000){onlineQuit(); goMap(true); toast('Lost the connection to the farm.'); return;}
+  clearTimeout(ONLINE.retry); ONLINE.retry=setTimeout(()=>{if(ONLINE.want&&!ONLINE.ws) onlineOpen(ONLINE.code,false);},1500);
+}
+// Leave for good. With tell, the server frees our place right away instead of holding it for a minute.
+function onlineQuit(tell){
+  if(tell) onlineSend({t:'leave'});
+  ONLINE.want=false; clearTimeout(ONLINE.retry); clearInterval(ONLINE.ping);
+  const ws=ONLINE.ws; ONLINE.ws=null; if(ws){setTimeout(()=>{try{ws.close();}catch(e){}},tell?150:0);}
+  Object.assign(ONLINE,{joined:false,creating:false,lost:0,you:'',leader:'',players:[],rtt:0});
+  if(NET.online){NET.role=null; NET.conn=null; NET.online=false; NET.lead=false; NET.code=''; NET.up=null; renderCoopBar();}
+}
+function renderOnlineRoom(){
+  if(!ONLINE.joined) return;
+  $('#crCode').textContent=ONLINE.code;
+  $('#crPlayers').innerHTML=ONLINE.players.map(p=>`<li class="${p.online?'':'off'}"><span class="dot" style="background:${p.color}"></span>${p.name.replace(/[<&]/g,'')}${p.id===ONLINE.you?' (you)':''}<span class="tag">${!p.online?'reconnecting…':p.id===ONLINE.leader?'leader':''}</span></li>`).join('');
+  const n=ONLINE.players.length;
+  $('#crNote').textContent=ONLINE.lost?'Connection lost. Reconnecting…':
+    (n<3?`Friends join with code ${ONLINE.code} from Co-op, then "Join a friend's farm". ${3-n} more can join. `:'The farm is full. ')+
+    (NET.lead?'You pick the level from the map.':`${leaderName()} picks the level.`)+(ONLINE.rtt?` Ping ${ONLINE.rtt} ms.`:'');
+}
+function saveName(){const v=$('#cpName').value.replace(/[\u0000-\u001f]/g,'').trim().slice(0,14); if(v!==(SAVE.name||'')){SAVE.name=v; persist();}}
 function renderCoopBar(){
   const bar=$('#coopBar'); bar.hidden=!coop()&&!BOT.armed&&NET.role!=='hosting';
-  $('#coopText').textContent=NET.role==='host'?'Playing together. Your friend is connected: pick a level. Co-op levels are much harder.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':NET.role==='hosting'?`Your room code is ${NET.code}. Waiting for your friend to join…`:BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level. Co-op levels are much harder.`:'';
+  $('#coopText').textContent=NET.online?(ONLINE.lost?'Reconnecting to the farm…':`Farm ${ONLINE.code} · ${ONLINE.players.length} player${ONLINE.players.length>1?'s':''}. `+(NET.lead?(ONLINE.players.length>1?'Pick a level. Co-op levels are much harder.':`Friends join with code ${ONLINE.code}. Tap here for the farm.`):`${leaderName()} picks the level.`)):NET.role==='host'?'Playing together. Your friend is connected: pick a level. Co-op levels are much harder.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':NET.role==='hosting'?`Your room code is ${NET.code}. Waiting for your friend to join…`:BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level. Co-op levels are much harder.`:'';
   $('#coopLeave').textContent=coop()?'Leave':NET.role==='hosting'?'Cancel':'Play alone';
   $('#btnCoop').hidden=coop();
 }
 $('#btnCoop').onclick=()=>openCoop();
+$('#coopText').onclick=()=>{if(NET.online) openCoop();};
+$('#crLeave').onclick=()=>{leaveCoop(); hide('#ovCoop'); if(G) goMap(true);};
 $('#cpHost').onclick=()=>hostGame();
 $('#cpJoinOpen').onclick=()=>{$('#coopMenu').hidden=true; $('#coopJoin').hidden=false; coopStatus(''); $('#cpInput').focus();};
 $('#cpJoin').onclick=()=>joinGame();

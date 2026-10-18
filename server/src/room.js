@@ -269,6 +269,7 @@ export class Room extends DurableObject {
     this.broadcastRoom();
 
     if (this.phase !== 'game') return;
+    if (this.game) this.inGame.add(m.id); // a friend joining mid-level plays straight away
     send(ws, this.startFrame());
     if (this.game) {
       // Level running (or in its end tail): snapshots resume on the next tick.
@@ -377,8 +378,7 @@ export class Room extends DurableObject {
         return;
       case 'start':
         if (!isLeader) return;
-        if (this.phase === 'game' && this.game && !this.endedAt) return; // a level is still running
-        await this.startLevel(msg);
+        await this.startLevel(msg); // also restarts a running level (Restart in the pause menu)
         return;
       case 'play':
         if (!isLeader || !this.game || this.game.state !== 'intro') return;

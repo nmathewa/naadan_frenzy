@@ -190,6 +190,20 @@ async function main() {
   await b2.wait(f => f.t === 's' && f.st === 'play');
   check(b2.snap().m === 150, 'a fresh level starts with fresh money');
 
+  const d = client(code, { name: 'Dev' });
+  check(!!(await d.wait(f => f.t === 'start')), 'a friend joining mid-level gets the start frame');
+  await d.wait(f => f.t === 's');
+  const m1 = b2.snap().m;
+  const sd = d.input({ t: 'buy', k: 'hen' });
+  await d.wait(f => f.t === 's' && f.ack >= sd);
+  await sleep(200);
+  check(b2.snap().m === m1 - 100, 'and can play straight away');
+
+  b2.send({ t: 'start', li: 1 });
+  const restarted = await d.wait(f => f.t === 'start' && f.li === 1);
+  check(!!restarted, 'the leader can switch level mid-game');
+  await d.close();
+
   await b2.close();
   console.log(`\n${passes} passed, ${failures} failed`);
   process.exit(failures ? 1 : 0);

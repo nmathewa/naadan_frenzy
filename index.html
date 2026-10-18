@@ -385,7 +385,8 @@ const autoTrip=()=>UPG.auto.trip[UP().auto], wsMult=()=>UPG.ws.mult[UP().ws];
 // Custom sound files (published next to the page in sounds/). Moments without a file keep the synthesised sound.
 const CUSTOM_SFX={     // sound name -> file, or a list of files to pick from at random
   win:['sounds/win-ithokke-enth.mp3'],
-  hit:'sounds/punch.mp3',   // each tap on a jackal or monkey
+  hit:'sounds/punch.mp3',
+  eaten:'sounds/eaten-pedikalleda.mp3',  // fail only: a jackal ran off with the last bird   // each tap on a jackal or monkey
   fail:['sounds/fail.mp3','sounds/fail-paripadi-saslim.mp3','sounds/fail-thherneda.mp3'],
   attack:'sounds/attack.mp3',  // a jackal grabs a bird or a monkey steals goods (no sound when they arrive)
 };
@@ -401,7 +402,7 @@ function pickBuf(key){ // random clip from the list, never the same one twice in
   const a=BUF[key]; if(!a||!a.length) return null; if(a.length===1) return a[0];
   let b; do{b=a[Math.floor(Math.random()*a.length)];}while(b===lastPick[key]); return lastPick[key]=b;
 }
-const CUSTOM_VOL={fail:.8,attack:.8,win:.85,hit:.7};
+const CUSTOM_VOL={eaten:.8,fail:.8,attack:.8,win:.85,hit:.7};
 function playBuf(buf,dest,vol){const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=buf; g.gain.value=vol||1; s.connect(g); g.connect(dest); s.start(); return s;}
 let AC=null, MASTER=null, MUSIC=null, MUSBUS=null, SFXG=null, ECHO=null, NOISE=null;
 const MUSIC_VOL=.55, SFX_VOL=.9;
@@ -521,6 +522,7 @@ function playSfx(n){
     case 'honk': horn(UP().auto,t,true); break;
     case 'load': osc('sine',190,t,.1,.22,{f2:90}); noise(t,.06,.12,'lowpass',700); break;
     case 'ding': bell(t,1318,.16); break;
+    case 'eaten':
     case 'fail': [392,370,349,311].forEach((f,i)=>osc('sawtooth',f,t+i*.32,i===3?.9:.28,.09,{filter:'lowpass',ff:1400,f2:i===3?290:undefined})); break;
     case 'thud': osc('sine',140,t,.12,.18,{f2:70}); noise(t,.06,.08,'lowpass',600); break;
     case 'spoil': osc('sine',300,t,.25,.07,{f2:120}); break;
@@ -1017,9 +1019,12 @@ function update(dt){
   G.cages=G.cages.filter(c=>!c.gone);
   G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d);
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
-  if(!G.animals.length&&!G.boats.length&&!G.trees.length&&!G.products.length&&!G.cages.length&&!storeUsed()&&!cargoUsed()&&G.truck.state==='home'){
+  if(!G.animals.length&&!G.boats.length&&!G.jackals.some(j=>j.carry)&&!G.trees.length&&!G.products.length&&!G.cages.length&&!storeUsed()&&!cargoUsed()&&G.truck.state==='home'){
     const cheapest=Math.min(...G.L.buy.map(k=>BUY[k].cost));
-    if(G.money<cheapest){failLevel('No birds left and no money to buy more. Keep grass growing so your birds don’t starve.'); return;}
+    if(G.money<cheapest){
+      if(G.lastLoss==='jackal') failLevel('A jackal ran off with your last bird and there’s no money for another. Tap jackals fast to make them let go.','eaten');
+      else failLevel('No birds left and no money to buy more. Keep grass growing so your birds don’t starve.');
+      return;}
   }
   if(goalsMet()){G.state='won'; G.wonT=0; setMusic(null); sfx('win'); return;}
   if(G.t>=timeLimit(G.L)) failLevel('Time’s up. Finish the goals before the countdown reaches zero.');
@@ -1040,7 +1045,7 @@ function updAnimal(a,dt){
   const st=ANIM[a.type]; a.mv=false;
   a.food-=dt/st.hunger*(G.hard?1.3:1);
   if(a.food<=0){a.food=0; a.starve+=dt; if(!a.warned){a.warned=true; sfx('hungry');}
-    if(a.starve>=st.starve){a.dead=true; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
+    if(a.starve>=st.starve){a.dead=true; G.lastLoss='starve'; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
   else{a.starve=0; if(a.food>.3) a.warned=false;}
   if(a.food>0){a.prod+=dt/st.prod; if(a.prod>=1){a.prod=0; dropProduct(st.out,a.x-a.dir*6,a.y+4,15); sfx(a.type==='hen'?'cluck':'quack');}}
   if(a.enter){if(moveTo(a,a.tx,a.ty,st.speed*1.4,dt)) a.enter=false; return;}
@@ -1079,7 +1084,7 @@ function updJackal(j,dt){
     moveTo(j,j.target.x,j.target.y,G.hard?34:26,dt);
     if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('attack');
       toast(`The jackal grabbed a ${ANIM[j.carry].name}. Tap it fast to make it let go!`);}
-  }else fleeTo(j,j.carry?34:42,dt);
+  }else{fleeTo(j,j.carry?34:42,dt); if(j.gone&&j.carry) G.lastLoss='jackal';}
 }
 function updMonkey(m,dt){
   m.mv=false; if(m.stun>0){m.stun-=dt; return;}
@@ -1093,7 +1098,7 @@ function updMonkey(m,dt){
   }else fleeTo(m,m.state==='scared'?85:50,dt);
 }
 const timeLimit=L=>Math.round(L.silver*(L.hard?1.5:2));
-function failLevel(reason){G.state='failed'; G.failReason=reason; G.wonT=0; setMusic(null); sfx('fail');}
+function failLevel(reason,sound){G.state='failed'; G.failReason=reason; G.wonT=0; setMusic(null); sfx(sound||'fail');}
 function goalsMet(){
   for(const [k,n] of Object.entries(G.L.goals)){if(k==='money'){if(G.money<n) return false;} else if((G.collected[k]||0)<n) return false;}
   return true;

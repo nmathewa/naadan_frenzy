@@ -37,6 +37,9 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 #lvlName{flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #money{font-weight:800;font-size:17px;color:#ffe39a;font-variant-numeric:tabular-nums}
 #timer.low{background:#a9472b;color:#fff}
+#timer.night{background:#24356e;color:#fff}
+.tool-btn{width:auto;padding:0 10px;background:#7a5a2a}
+.tool-btn.on{background:#e2b33c;color:#3a2414}
 #timer{display:flex;align-items:center;gap:5px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;background:rgba(0,0,0,.25);padding:1px 9px;border-radius:20px}
 .mdot{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 1.5px rgba(0,0,0,.25) inset}
 #goals{display:flex;flex-wrap:wrap;gap:5px}
@@ -172,6 +175,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
       <div class="hud-top">
         <button class="icon-btn" id="btnPause" aria-label="Pause">II</button>
         <button class="icon-btn say-btn" id="btnSay" aria-label="Meme sounds">Say</button>
+        <button class="icon-btn tool-btn" id="btnTool" aria-label="Shovel">Dig</button>
         <div id="lvlName"></div>
         <div id="money">₹0</div>
         <div id="timer"><span class="mdot" id="mdot"></span><span id="time">0:00</span></div>
@@ -196,7 +200,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
         <span class="map-btns"><button class="btn" id="btnCoop">Play together</button><button class="btn alt" id="btnShop">Upgrades</button></span>
       </div>
       <div class="coop-bar" id="coopBar" hidden><span id="coopText"></span><button class="sbtn alt" id="coopLeave">Leave</button></div>
-      <div class="map-sound"><button class="chip" id="mapMusic" aria-pressed="true">Music on</button><button class="chip" id="mapSfx" aria-pressed="true">Sound effects on</button></div>
+      <div class="map-sound"><button class="chip" id="mapMusic" aria-pressed="true">Music on</button><button class="chip" id="mapSfx" aria-pressed="true">Sound effects on</button><button class="chip" id="mapNights" aria-pressed="true">Nights on</button></div>
       <div id="levels"></div>
       <div class="map-foot">
         <span>Progress saves in this browser · <span id="appVer"></span></span>
@@ -224,6 +228,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
         <div class="phead"><h2>Storehouse</h2><span class="pill light" id="mkCap"></span></div>
         <button class="btn alt wide" id="mkStoreUp" hidden style="margin-top:8px"></button>
         <div id="mkRows"></div>
+        <div id="mkAnimals"></div>
         <div class="kasavu"></div>
         <div class="phead"><h2 id="mkAutoName" style="font-size:19px">Auto-rickshaw</h2><span class="pill light" id="mkLoad"></span></div>
         <button class="btn alt wide" id="mkUp" hidden></button>
@@ -351,6 +356,13 @@ const ITEMS={
   banana:{name:'Banana',price:20},
   chips:{name:'Banana chips',price:200},
   jackal:{name:'Caged jackal',price:100},
+  boarcage:{name:'Caged wild boar',price:220},
+  live_hen:{name:'Live hen',price:60},
+  live_duck:{name:'Live duck',price:110},
+  live_piglet:{name:'Young pig',price:70},
+  live_pig:{name:'Grown pig',price:160},
+  live_calf:{name:'Buffalo calf',price:110},
+  live_buffalo:{name:'Grown buffalo',price:240},
   jackfruit:{name:'Jackfruit',price:40},
   jackchips:{name:'Jackfruit chips',price:260},
   tapioca:{name:'Tapioca',price:25},
@@ -433,10 +445,10 @@ const REGIONS={1:'Region 1 · Kuttanad backwaters',2:'Region 2 · Idukki high ra
 const regionOf=i=>LEVELS[i].region||1;
 
 // ---------- save ----------
-const APP_VERSION='v20';
+const APP_VERSION='v21';
 const SKEY='naadan-frenzy-save-v1';
 const UNLOCK_ALL=true; // testing: every level is playable. Set to false to restore normal unlocking.
-function defSave(){return{unlocked:1,stars:{},coins:0,up:{well:0,store:0,auto:0,ws:0},music:true,sfx:true}}
+function defSave(){return{unlocked:1,stars:{},coins:0,up:{well:0,store:0,auto:0,ws:0},music:true,sfx:true,nights:true}}
 let SAVE=defSave();
 try{const s=JSON.parse(localStorage.getItem(SKEY)||'null'); if(s){SAVE=Object.assign(defSave(),s); SAVE.up=Object.assign(defSave().up,s.up||{});}}catch(e){}
 if('muted' in SAVE){if(SAVE.muted){SAVE.music=false; SAVE.sfx=false;} delete SAVE.muted;}
@@ -603,6 +615,7 @@ function playSfx(n){
     case 'ding': bell(t,1318,.16); break;
     case 'elephant':{const o=osc('sawtooth',320,t,1.1,.12,{a:.08,f2:640,glide:.35,filter:'bandpass',ff:900,q:1.5}); o.frequency.exponentialRampToValueAtTime(420,t+1.1); break;}
     case 'cracker': noise(t,.25,.5,'lowpass',2500,.7); noise(t+.05,.5,.25,'bandpass',600,1); break;
+    case 'ev_dusk': [0,.45].forEach(d=>osc('sine',420,t+d,.35,.13,{f2:360,a:.06})); break;
     case 'ev_hartal': [0,.25].forEach(d=>osc('sine',1900,t+d,.18,.12,{f2:1700})); break;
     case 'ev_monsoon': noise(t,1.6,.22,'lowpass',260,.7,undefined,.15); noise(t+.1,.8,.12,'lowpass',600,.7); break;
     case 'ev_powercut': osc('square',900,t,.35,.06,{f2:60,filter:'lowpass',ff:2000}); break;
@@ -631,7 +644,7 @@ const PHRASES=[
   [[5,2],[6,2],[7,2],[6,1],[5,1],[4,2],[3,2],[4,4]],
 ].map(p=>{const m={}; let pos=0; p.forEach(([d,l])=>{if(d>=0) m[pos]=[d,l]; pos+=l;}); return m;});
 const SONG=[0,1,0,2,4,3,1,2];
-const MODES={map:{bpm:68,drums:false},play:{bpm:92,drums:true},rush:{bpm:112,drums:true,roll:true}};
+const MODES={night:{bpm:56,drums:false},map:{bpm:68,drums:false},play:{bpm:92,drums:true},rush:{bpm:112,drums:true,roll:true}};
 const MUS={mode:'map',next:0,step:0,duck:1};
 const noteF=i=>{const base=[0,2,4,7,9], o=Math.floor(i/5), d=base[((i%5)+5)%5]; return 293.66*Math.pow(2,(d+12*o)/12);};
 function stopCustomMusic(){if(MUS.node){try{MUS.node.stop();}catch(e){} MUS.node=null; MUS.buf=null;}}
@@ -727,6 +740,10 @@ function drawItem(g,type,x,y,s){
       g.fillStyle='#efd27a'; ell(g,-3,1,4.5,3.5); g.fill();
       g.fillStyle='#6e3216'; [[3,-1],[5,2],[2,2.5]].forEach(([a,b])=>{ell(g,a,b,1.8,1.5); g.fill();});
       g.fillStyle='#2f6b2a'; ell(g,0,-2.5,1.6,.7,.4); g.fill(); break;
+    case 'boarcage':
+      g.fillStyle='#5b4636'; ell(g,0,1,6.5,4); g.fill();
+      g.strokeStyle='#8a6232'; g.lineWidth=1.6; for(let i=-6;i<=6;i+=3){g.beginPath(); g.moveTo(i,-6); g.lineTo(i,6); g.stroke();}
+      g.fillStyle='#8a6232'; g.fillRect(-8,-8,16,2.5); g.fillRect(-8,5.5,16,2.5); break;
     case 'jackal':
       g.fillStyle='#b9945f'; ell(g,0,1,6,4); g.fill();
       g.strokeStyle='#8a6232'; g.lineWidth=1.6; for(let i=-6;i<=6;i+=3){g.beginPath(); g.moveTo(i,-6); g.lineTo(i,6); g.stroke();}
@@ -1140,6 +1157,8 @@ function newGame(li){
     store:{},collected:{},ws:[],autoBoost:0,storeBoost:0,water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
     nextJ:L.jackal?L.jackal.first:Infinity,ev:null,evOn:li>=2&&L.events!==false,nextEv:(L.hard?30:50)*rnd(.9,1.3),nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
   G.hard=!!L.hard;
+  G.boars=[]; G.tool='net'; G.shovel=false;
+  G.dn=(SAVE.nights!==false&&li>=2&&!L.night)?{phase:'day',t:0,next:L.hard?55:70,pen:100}:null;
   G.slots=L.slots||WS_KEYS; const sg=slotGeom(G.slots.length); G.wsX=sg.xs; G.wsW=sg.w;
   G.ws=G.slots.map(k=>L.ws&&L.ws.includes(k)?{type:k,built:!!(L.built&&L.built.includes(k)),busy:false,t:0,dur:1,queue:0,jobs:[],cur:null}:null);
   for(const k in (L.animals||{})) for(let i=0;i<L.animals[k];i++){const p=randField(30); addAnimal(k,p.x,p.y,false);}
@@ -1181,13 +1200,15 @@ function collect(p){
 
 // ---------- update ----------
 function update(dt){
-  G.t+=dt;
+  if(!isNight()) G.t+=dt;
+  updNight(dt);
   if(BOT.on) botTick(dt);
   for(let i=0;i<G.grass.length;i++) if(G.grass[i]<G.gT[i]) G.grass[i]=Math.min(G.gT[i],G.grass[i]+dt*2.2);
   if(G.wellT>0){G.wellT-=dt; if(G.wellT<=0){G.wellT=0; G.water=wellCap(); sfx('splash');}}
   G.animals.forEach(a=>updAnimal(a,dt));
   G.animals=G.animals.filter(a=>!a.dead);
   G.trees.forEach(tr=>{
+    if(isNight()) return;
     const rate=tr.wet>0?2:1; tr.wet=Math.max(0,(tr.wet||0)-dt);
     if(tr.g<1){tr.g=Math.min(1,tr.g+dt/5*rate); return;}
     tr.t+=dt*rate; const per=TREE[tr.type].period;
@@ -1215,11 +1236,12 @@ function update(dt){
   updEvents(dt);
   if(G.L.elephant){G.nextE-=dt; if(G.nextE<=0){G.nextE=G.L.elephant.every*rnd(.85,1.15); spawnElephant();}}
   G.elephants.forEach(e=>{if(e.stun>0) e.stun-=dt; else updElephant(e,dt);}); G.elephants=G.elephants.filter(e=>!e.gone);
-  if(G.L.jackal){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter&&!ANIM[a.type].meat)) spawnJackal();}}
-  if(G.L.monkey){G.nextM-=dt; if(G.nextM<=0){G.nextM=G.L.monkey.every*rnd(.8,1.2); spawnMonkey();}}
+  if(G.L.jackal&&!nightish()){G.nextJ-=dt; if(G.nextJ<=0){G.nextJ=G.L.jackal.every*rnd(.8,1.2); if(G.animals.some(a=>!a.enter&&!ANIM[a.type].meat)) spawnJackal();}}
+  if(G.L.monkey&&!nightish()){G.nextM-=dt; if(G.nextM<=0){G.nextM=G.L.monkey.every*rnd(.8,1.2); spawnMonkey();}}
   G.jackals.forEach(j=>updJackal(j,dt)); G.jackals=G.jackals.filter(j=>!j.gone);
+  G.boars.forEach(b=>updBoar(b,dt)); G.boars=G.boars.filter(b=>!b.gone);
   G.monkeys.forEach(m=>updMonkey(m,dt)); G.monkeys=G.monkeys.filter(m=>!m.gone);
-  G.cages.forEach(c=>{c.t-=dt; if(c.t<=0){c.gone=true; const j=makeJackal(c.x,c.y); j.state='flee'; G.jackals.push(j); toast('The jackal broke out of its cage.');}});
+  G.cages.forEach(c=>{c.t-=dt; if(c.t<=0){c.gone=true; if(c.kind==='boar'){G.boars.push({id:++UID,x:c.x,y:c.y,dir:1,taps:0,stun:0,state:'flee',t:0,walk:0,mv:false,gone:false}); toast('The wild boar broke out of its cage.'); return;} const j=makeJackal(c.x,c.y); j.state='flee'; G.jackals.push(j); toast('The jackal broke out of its cage.');}});
   G.cages=G.cages.filter(c=>!c.gone);
   G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d);
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
@@ -1247,6 +1269,7 @@ function nearestGrass(x,y){
 }
 function updAnimal(a,dt){
   const st=ANIM[a.type]; a.mv=false;
+  if(nightish()){penAnimal(a,dt); return;}
   a.food-=dt/st.hunger*(G.hard?1.3:1);
   if(a.food<=0){a.food=0; a.starve+=dt; if(!a.warned){a.warned=true; sfx('hungry');}
     if(a.starve>=st.starve){a.dead=true; G.lastLoss='starve'; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
@@ -1271,10 +1294,10 @@ function updAnimal(a,dt){
   if(moveTo(a,a.tx,a.ty,st.speed,dt)){a.wait=rnd(.5,2.5); const p=randField(); a.tx=p.x; a.ty=p.y;}
 }
 function makeJackal(x,y){return{id:++UID,x,y,dir:1,taps:0,need:G.hard?8:5,stun:0,state:'hunt',target:null,carry:null,t:0,think:0,walk:0,mv:false,gone:false};}
-function spawnJackal(){
+function spawnJackal(quiet){
   const side=Math.random()<.5?-1:1, y=FY+40+Math.random()*(FH-80);
   const j=makeJackal(side<0?-24:W+24,y); j.dir=-side; G.jackals.push(j);
-  toast('A jackal is sneaking in. Tap it to trap it!');
+  if(!quiet) toast('A jackal is sneaking in. Tap it to trap it!');
 }
 function spawnMonkey(){
   const side=Math.random()<.5?-1:1, y=FY+30+Math.random()*(FH-60);
@@ -1286,12 +1309,22 @@ function updJackal(j,dt){
   j.t+=dt;
   if(j.state==='hunt'){
     j.think-=dt;
-    if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if(a.enter||a.dead||ANIM[a.type].meat) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
-    if(!j.target||j.t>24){j.state='flee'; return;}
+    if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if((a.enter&&!nightish())||a.dead||ANIM[a.type].meat||a.inPen) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
+    if(nightish()&&!j.target){ // everyone is in the pen: break in
+      if(!G.animals.some(a=>a.inPen&&!ANIM[a.type].meat)){if(j.t>10) j.state='flee'; return;}
+      const ex=clamp(j.x,PEN.x-PEN.w/2,PEN.x+PEN.w/2), ey=clamp(j.y,PEN.y-PEN.h/2,PEN.y+PEN.h/2);
+      if(moveTo(j,ex,ey,G.hard?34:26,dt)&&isNight()){
+        j.walk+=dt*.6; G.dn.pen=Math.max(0,G.dn.pen-dt*(G.hard?14:10));
+        if(G.dn.pen<=0){const vs=G.animals.filter(a=>a.inPen&&!ANIM[a.type].meat&&!a.dead), v=vs[Math.floor(Math.random()*vs.length)];
+          if(v){v.dead=true; j.carry=v.type; j.state='flee'; sfx('attack'); toast(`The pen broke! A jackal dragged out a ${ANIM[v.type].name}. Tap it fast!`);}}
+      }
+      return;
+    }
+    if(!j.target||j.t>(nightish()?40:24)){j.state='flee'; return;}
     moveTo(j,j.target.x,j.target.y,G.hard?34:26,dt);
     if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('attack');
       toast(`The jackal grabbed a ${ANIM[j.carry].name}. Tap it fast to make it let go!`);}
-  }else{fleeTo(j,j.carry?34:42,dt); if(j.gone&&j.carry) G.lastLoss='jackal';}
+  }else{fleeTo(j,j.carry?34:42,dt); if(j.gone&&j.carry){G.lastLoss='jackal'; if(G.nightStats&&nightish()&&!j.counted) G.nightStats.lost.push(j.carry);}}
 }
 function updMonkey(m,dt){
   m.mv=false; if(m.stun>0){m.stun-=dt; return;}
@@ -1338,7 +1371,8 @@ function updEvents(dt){
     return;
   }
   G.nextEv-=dt;
-  if(G.nextEv<=0){const pool=EVENT_KEYS.filter(k=>k!==G.lastEv); const k=pool[Math.floor(Math.random()*pool.length)]; G.lastEv=k; startEvent(k);}
+  if(nightish()) return;
+  if(G.nextEv<=0){const pool=EVENT_KEYS.filter(k=>k!==G.lastEv&&k!=='powercut'); const k=pool[Math.floor(Math.random()*pool.length)]; G.lastEv=k; startEvent(k);}
 }
 // temple elephant (with nettipattam and parasol) or the wild tusker
 function drawElephant(g,x,y,dir,t,mv,o){
@@ -1552,18 +1586,207 @@ $('#raceRow').addEventListener('pointerdown',e=>{e.preventDefault(); raceRow();}
 $('#raceDone').onclick=()=>{RACE.on=false; hide('#ovRace');};
 $('#rsRace').onclick=()=>{$('#rsRace').hidden=true; hide('#ovResult'); startRace();};
 
+// ---------- night ----------
+// From level 3, night falls every couple of minutes. Animals go into the pen, the market closes, the clock
+// pauses and wild animals raid: jackals gnaw at the pen, wild boar eat the plants. Power cuts only happen at night.
+const PEN={x:210,y:300,w:128,h:78};
+const DUSK=5, DAWN=3, PHASES=['day','dusk','night','dawn'];
+const nightish=()=>!!(G&&G.dn&&(G.dn.phase==='dusk'||G.dn.phase==='night'));
+const isNight=()=>!!(G&&G.dn&&G.dn.phase==='night');
+function dark(){
+  if(!G||!G.dn) return 0; const d=G.dn;
+  return d.phase==='dusk'?Math.min(1,d.t/DUSK):d.phase==='night'?1:d.phase==='dawn'?Math.max(0,1-d.t/DAWN):0;
+}
+const inPenRect=(x,y)=>Math.abs(x-PEN.x)<PEN.w/2+6&&Math.abs(y-PEN.y)<PEN.h/2+6;
+function penSpot(){return{x:PEN.x-PEN.w/2+14+Math.random()*(PEN.w-28),y:PEN.y-PEN.h/2+18+Math.random()*(PEN.h-28)};}
+function updNight(dt){
+  const d=G.dn; if(!d) return; d.t+=dt;
+  if(d.phase==='day'){
+    if(d.t>=d.next){d.phase='dusk'; d.t=0; G.shovel=false;
+      if(G.ev&&G.ev.type!=='powercut'){G.ev=null; G.nextEv=30;}
+      G.monkeys.forEach(m=>{if(m.state==='seek') m.state='leave';});
+      toast('Night is falling. Your animals are heading to the pen.'); sfx('ev_dusk');}
+  }else if(d.phase==='dusk'){
+    if(d.t>=DUSK){d.phase='night'; d.t=0; d.len=G.hard?50:40; d.pen=100; d.nj=2; d.nb=5;
+      d.pcAt=Math.random()<.45?rnd(6,d.len-18):Infinity; G.nightStats={caught:0,killed:0,lost:[],trees:0};
+      toast('Night! Jackals and wild boar are coming. Catch them with the net or kill them with the stick.'); setMusic('night');}
+  }else if(d.phase==='night'){
+    d.nj-=dt; if(d.nj<=0){d.nj=(G.hard?4.5:6.5)*rnd(.8,1.2); if(G.animals.some(a=>!ANIM[a.type].meat)) spawnJackal(true);}
+    d.nb-=dt; if(d.nb<=0){d.nb=(G.hard?8:11)*rnd(.8,1.2); spawnBoar();}
+    if(d.t>=d.pcAt&&!G.ev){d.pcAt=Infinity; startEvent('powercut');}
+    if(d.t>=d.len){d.phase='dawn'; d.t=0; if(evOn('powercut')) G.ev=null; endNight();}
+  }else if(d.phase==='dawn'&&d.t>=DAWN){d.phase='day'; d.t=0; d.next=G.hard?80:100;}
+}
+function endNight(){
+  const s=G.nightStats||{caught:0,killed:0,lost:[],trees:0};
+  G.animals.forEach(a=>{a.inPen=false; a.penSpot=null; a.wait=0;});
+  G.jackals.forEach(j=>{if(j.carry){s.lost.push(j.carry); j.counted=true;} j.state='flee';}); G.boars.forEach(b=>{b.state='flee';});
+  const parts=[`caught ${s.caught}`,`killed ${s.killed}`];
+  if(s.lost.length){const m={}; s.lost.forEach(k=>{m[k]=(m[k]||0)+1;}); parts.push('lost '+Object.entries(m).map(([k,n])=>`${n} ${plural(ANIM[k].name,n)}`).join(', '));}
+  if(s.trees) parts.push(`${s.trees} ${s.trees>1?'plants':'plant'} eaten`);
+  toast('Morning! Night over: '+parts.join(', ')+'.'); sfx('ding'); setMusic(G.L.rush?'rush':'play');
+}
+// Animals walk into the pen at dusk and stay there (no hunger, no eggs) until dawn.
+function penAnimal(a,dt){
+  const st=ANIM[a.type]; a.starve=0; a.enter=false; a.eating=false;
+  if(!a.penSpot) a.penSpot=penSpot();
+  if(!a.inPen){if(moveTo(a,a.penSpot.x,a.penSpot.y,st.speed*2.2,dt)) a.inPen=true; return;}
+  a.wait-=dt; if(a.wait<=0){a.wait=rnd(1,3); a.penSpot=penSpot();}
+  moveTo(a,a.penSpot.x,a.penSpot.y,st.speed*.5,dt);
+}
+function repairPen(){
+  if(G.dn.pen>=100){toast('The pen is in good shape.'); return;}
+  G.dn.pen=Math.min(100,G.dn.pen+20); fx('dust',PEN.x+rnd(-40,40),PEN.y-PEN.h/2); sfx('pop');
+}
+// The tool chosen with the Net / Stick button at night. Daytime hits always use the net.
+function curTool(){
+  if(!nightish()) return 'net';
+  if(ACTOR==='remote') return NET.remoteTool==='stick'?'stick':'net';
+  if(ACTOR==='local') return G.tool==='stick'?'stick':'net';
+  return 'net';
+}
+const JACKAL_KILL=()=>G.hard?5:3, BOAR_CATCH=()=>G.hard?10:7, BOAR_KILL=()=>G.hard?6:4;
+function predNeed(kind,o){ // taps shown above a predator, for this phone's tool
+  const stick=nightish()&&G.tool==='stick';
+  return kind==='boar'?(stick?BOAR_KILL():BOAR_CATCH()):(stick?JACKAL_KILL():o.need);
+}
+function spawnBoar(){
+  if(!G.trees.some(t=>t.g>.05)) return;
+  const side=Math.random()<.5?-1:1, y=FY+40+Math.random()*(FH-80);
+  G.boars.push({id:++UID,x:side<0?-30:W+30,y,dir:-side,taps:0,stun:0,state:'raid',target:null,t:0,walk:0,mv:false,gone:false});
+  if(!G.boarTold){G.boarTold=true; toast('A wild boar is after your plants! Tap it to stop it.');}
+}
+function updBoar(b,dt){
+  b.mv=false; if(b.stun>0){b.stun-=dt; return;}
+  b.t+=dt;
+  if(b.state==='flee'){fleeTo(b,55,dt); return;}
+  if(!b.target||!G.trees.includes(b.target)){
+    const trs=G.trees.filter(t=>t.g>.05); if(!trs.length){b.state='flee'; return;}
+    b.target=trs.reduce((a,t)=>dist(t.x,t.y,b.x,b.y)<dist(a.x,a.y,b.x,b.y)?t:a);
+  }
+  const tr=b.target;
+  if(moveTo(b,tr.x+(b.x<tr.x?-13:13),tr.y+4,G.hard?32:26,dt)){
+    b.walk+=dt*.6; tr.g=Math.max(0,tr.g-dt*(G.hard?.3:.22)); tr.t=0;
+    if(tr.g<=0){G.trees=G.trees.filter(o=>o!==tr); fx('dust',tr.x,tr.y); sfx('attack');
+      toast(`A wild boar ate your ${BUY[tr.type].name.toLowerCase()}!`); if(G.nightStats) G.nightStats.trees++; b.target=null;}
+  }
+  const c=Math.floor((b.x-FX)/CELL), r=Math.floor((b.y-FY)/CELL);
+  if(c>=0&&r>=0&&c<COLS&&r<ROWS){const i=r*COLS+c; G.grass[i]=G.gT[i]=Math.min(G.grass[i],.3);}
+}
+function hitBoar(b){
+  const tool=curTool(); b.taps++; b.stun=.3; sfx('hit'); fx('dust',b.x,b.y);
+  if(b.taps<(tool==='stick'?BOAR_KILL():BOAR_CATCH())) return;
+  b.gone=true; G.boars=G.boars.filter(o=>o!==b);
+  if(tool==='stick'){fx('puff',b.x,b.y-8); sfx('thud'); toast('Killed the wild boar with the stick.'); if(G.nightStats) G.nightStats.killed++;}
+  else{const cx=clamp(b.x,FX+16,FX+FW-16), cy=clamp(b.y,FY+24,FY+FH-8), life=isNight()?40:15;
+    G.cages.push({x:cx,y:cy,t:life,max:life,kind:'boar'}); sfx('cage'); toast('Caught a wild boar! Tap the cage to keep it and sell it.'); if(G.nightStats) G.nightStats.caught++;}
+}
+function drawBoar(g,x,y,dir,t,mv,stun){
+  g.save(); g.translate(x,y); g.scale(dir,1);
+  const sw=mv?Math.sin(t*14)*2:0;
+  g.fillStyle='rgba(20,15,5,.25)'; ell(g,0,6,15,3.4); g.fill();
+  g.fillStyle='#3a2a20'; [[-8,sw],[-4,-sw],[5,-sw],[9,sw]].forEach(([lx,d])=>g.fillRect(lx+d*.4-1.5,0,3,7));
+  g.fillStyle='#5b4636'; ell(g,0,-4,14,8.5); g.fill();
+  g.strokeStyle='#2e2119'; g.lineWidth=1.4; g.beginPath(); for(let k=-10;k<=6;k+=3){g.moveTo(k,-11); g.lineTo(k+1.5,-15);} g.stroke();
+  g.fillStyle='#5b4636'; ell(g,12,-5,7.5,6.5); g.fill();
+  g.fillStyle='#7a5c48'; ell(g,18.5,-3,3.4,3); g.fill();
+  g.strokeStyle='#efe6cf'; g.lineWidth=1.6; g.beginPath(); g.moveTo(16,-1); g.quadraticCurveTo(19.5,-2,19,-7); g.stroke();
+  g.fillStyle='#2e2119'; tri(g,9,-10,11,-16,13.5,-10); g.fill();
+  g.fillStyle='#111'; ell(g,13.5,-7,.95,.95); g.fill();
+  g.strokeStyle='#3a2a20'; g.lineWidth=1.2; g.beginPath(); g.moveTo(-14,-5); g.quadraticCurveTo(-18,-4,-17,0); g.stroke();
+  if(stun>0){g.globalAlpha=.45; g.fillStyle='#fff'; ell(g,3,-4,17,9); g.fill(); g.globalAlpha=1;}
+  g.restore();
+}
+function drawPen(g){
+  const dk=dark(); if(dk<=0) return;
+  const L=PEN.x-PEN.w/2, T=PEN.y-PEN.h/2, R2=PEN.x+PEN.w/2, B=PEN.y+PEN.h/2;
+  g.save(); g.globalAlpha=Math.min(1,dk*1.6);
+  g.fillStyle='rgba(150,110,60,.35)'; rr(g,L,T,PEN.w,PEN.h,8); g.fill();
+  g.strokeStyle='#c49a4e'; g.lineWidth=2.4; g.beginPath();
+  [T+10,T+22].forEach(y=>{g.moveTo(L,y); g.lineTo(R2,y);}); [B-6,B+4].forEach(y=>{g.moveTo(L,y); g.lineTo(R2,y);});
+  g.moveTo(L,T+10); g.lineTo(L,B+4); g.moveTo(R2,T+10); g.lineTo(R2,B+4); g.stroke();
+  g.fillStyle='#7a5a2a'; for(let x=L;x<=R2+1;x+=16){g.fillRect(x-2,T,4,26); g.fillRect(x-2,B-14,4,20);}
+  g.restore();
+}
+function drawNight(g,t){
+  const dk=dark(); if(dk<=0) return;
+  g.fillStyle=`rgba(8,14,44,${.55*dk})`; g.fillRect(0,0,W,H);
+  if(!evOn('powercut')){
+    g.save(); g.globalCompositeOperation='lighter';
+    const lamp=(x,y,r)=>{const gr=g.createRadialGradient(x,y,2,x,y,r); gr.addColorStop(0,`rgba(255,190,90,${.32*dk})`); gr.addColorStop(1,'rgba(255,190,90,0)'); g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();};
+    G.ws.forEach((w,i)=>{if(w&&w.built) lamp(G.wsX[i],WS_BY-20,58);}); lamp(WH.x,WH.by-25,55); lamp(PEN.x,PEN.y-PEN.h/2-4,72);
+    g.restore();
+  }
+  g.fillStyle=`rgba(250,244,220,${.95*dk})`; ell(g,W-24,12,8,8); g.fill(); g.fillStyle=`rgba(8,14,44,${.9*dk})`; ell(g,W-20,10,7,7); g.fill();
+}
+function drawNightUI(g,t){
+  const dk=dark();
+  const eyes=(x,y,dir)=>{if(dk<.3) return; g.fillStyle=`rgba(255,220,90,${dk})`; ell(g,x,y,1.6,1.2); g.fill(); ell(g,x+dir*3,y,1.6,1.2); g.fill();};
+  G.jackals.forEach(j=>{eyes(j.x+j.dir*12.5,j.y-9.5,j.dir); tapPips(j.x,j.y-24,j.taps,predNeed('jackal',j));});
+  G.boars.forEach(b=>{if(b.state==='flee') return; eyes(b.x+b.dir*12,b.y-8,b.dir); tapPips(b.x,b.y-26,b.taps,predNeed('boar',b));});
+  if(isNight()){
+    const hp=G.dn.pen, w=70, x=PEN.x-w/2, y=PEN.y-PEN.h/2-18;
+    g.fillStyle='rgba(20,16,30,.8)'; rr(g,x,y,w,9,4.5); g.fill();
+    g.fillStyle=hp<35?'#e05a3a':hp<70?'#e2b33c':'#6fc36b'; rr(g,x+1,y+1,(w-2)*hp/100,7,3.5); g.fill();
+    if(hp<60){g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.lineWidth=3; g.strokeStyle='rgba(10,10,30,.85)';
+      const msg=hp<=0?'Pen broken! Tap to repair':'Tap the pen to repair'; g.strokeText(msg,PEN.x,y-9); g.fillStyle='#fff6d8'; g.fillText(msg,PEN.x,y-9);}
+  }
+  if(G.shovel){const label='Shovel: tap a plant or building to remove it'; g.font='800 12px '+FONT; const tw=g.measureText(label).width+22, y=FY+(G.ev?34:6);
+    g.fillStyle='rgba(122,90,42,.95)'; rr(g,W/2-tw/2,y,tw,22,11); g.fill(); g.fillStyle='#fff6d8'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(label,W/2,y+11.5);}
+}
+// ---------- shovel (day only) ----------
+function shovelAt(x,y){
+  if(nightish()){toast('No digging at night.'); return true;}
+  const tr=G.trees.find(tr=>Math.abs(x-tr.x)<20&&y>tr.y-60*(.35+.65*tr.g)&&y<tr.y+10);
+  if(tr){const back=Math.round(BUY[tr.type].cost*.3); G.trees=G.trees.filter(o=>o!==tr); G.money+=back; fx('dust',tr.x,tr.y); sfx('thud');
+    toast(`Dug up the ${BUY[tr.type].name.toLowerCase()}. +₹${back}`); return true;}
+  const i=G.ws.findIndex((w,i)=>w&&w.built&&Math.abs(x-G.wsX[i])<G.wsW/2+6&&y>8&&y<WS_BY+8);
+  if(i>=0){const w=G.ws[i], d=WS[w.type], back=Math.round(d.cost*.3);
+    Object.assign(w,{built:false,busy:false,jobs:[],cur:null,queue:0,t:0,broken:0}); G.money+=back; fx('dust',G.wsX[i],WS_BY-10); sfx('build');
+    toast(`Took down the ${d.name.toLowerCase()}. +₹${back}`); return true;}
+  toast('Tap a plant or a building to dig it up.'); return false;
+}
+$('#btnTool').onclick=()=>{
+  if(!G||G.state!=='play') return; audio();
+  if(nightish()){G.tool=G.tool==='stick'?'net':'stick';
+    showToast(G.tool==='stick'?'Stick: fewer taps, and the animal is killed. No reward.':'Net: more taps, but you catch the animal in a cage you can sell.');}
+  else{G.shovel=!G.shovel; if(G.shovel) showToast('Shovel: tap a plant or building to remove it. You get 30% of its cost back.');}
+  hudSig=''; renderHUD();
+};
+// ---------- selling live animals ----------
+// Pays less than turning the animal into products, on purpose.
+function liveItem(k,grown){return{hen:'live_hen',duck:'live_duck',pig:grown?'live_pig':'live_piglet',buffalo:grown?'live_buffalo':'live_calf'}[k];}
+const LIVE_BACK={live_hen:['hen',0],live_duck:['duck',0],live_piglet:['pig',0],live_pig:['pig',1],live_calf:['buffalo',0],live_buffalo:['buffalo',1]};
+const sellable=k=>G.animals.filter(a=>a.type===k&&!a.enter&&!a.dead&&!a.inPen).sort((p,q)=>(q.ready?1:0)-(p.ready?1:0));
+function sellAnimal(k){
+  const T=G.truck; if(T.state!=='home'||nightish()||!ANIM[k]) return;
+  if(autoCap()-cargoUsed()<=0){toast('The auto-rickshaw is full.'); sfx('err'); return;}
+  const a=sellable(k)[0]; if(!a) return;
+  const item=liveItem(k,!!a.ready); a.dead=true; T.cargo[item]=(T.cargo[item]||0)+1;
+  fx('fly',a.x,a.y,{item:'egg',tx:PARK.x,ty:PARK.y-30});
+}
+function unloadAnimal(item){
+  const T=G.truck, back=LIVE_BACK[item]; if(!back||!(T.cargo[item]>0)) return;
+  T.cargo[item]--; addAnimal(back[0],PARK.x-60,575,true);
+  if(back[1]){const a=G.animals[G.animals.length-1]; a.ready=true; a.prod=1;}
+}
+
 // ---------- input ----------
 function onTap(x,y,remote){
   if(!G||G.state!=='play'||(!remote&&isPaused())) return;
   if(!remote) audio();
   const mk=(Math.abs(x-WH.x)<64&&y>490&&y<602)||(x>266&&y>515&&y<606);
-  if(NET.role==='guest'){if(mk){if(x>266&&G.truck.state==='home') playSfx('honk'); openMarket();} else NET.send({t:'tap',x:r1(x),y:r1(y)}); return;}
+  if(NET.role==='guest'){if(mk){if(x>266&&G.truck.state==='home') playSfx('honk'); openMarket();} else{NET.send({t:'tap',x:r1(x),y:r1(y),tool:G.tool,sh:G.shovel?1:0}); G.shovel=false;} return;}
   for(const e of G.elephants) if(e.state!=='flee'&&dist(e.x+e.dir*10,e.y-26,x,y)<42){hitElephant(e,ACTOR||'kuttan'); return;}
+  for(const b of G.boars) if(b.state!=='flee'&&dist(b.x+b.dir*4,b.y-6,x,y)<28){hitBoar(b); return;}
   for(const m of G.monkeys) if(m.state!=='scared'&&dist(m.x,m.y-10,x,y)<26){hitMonkey(m); return;}
   for(const j of G.jackals) if(dist(j.x+3*j.dir,j.y-4,x,y)<28){hitJackal(j); return;}
+  const shovel=remote?(ACTOR==='remote'&&NET.remoteShovel):G.shovel;
+  if(shovel){if(shovelAt(x,y)&&!remote) G.shovel=false; return;}
   let best=null,bd=24; for(const p of G.products){const d=dist(p.x,p.y-3,x,y); if(d<bd){bd=d;best=p;}}
   if(best){collect(best); return;}
   for(const c of G.cages) if(dist(c.x,c.y-10,x,y)<24){collectCage(c); return;}
+  if(isNight()&&inPenRect(x,y)){repairPen(); return;}
   for(const a of G.animals) if(ANIM[a.type].meat&&!a.enter&&dist(a.x,a.y-8,x,y)<20){tapMeatAnimal(a); return;}
   for(const tr of G.trees) if(Math.abs(x-tr.x)<18&&y>tr.y-56*(.35+.65*tr.g)&&y<tr.y+8){waterTree(tr); return;}
   for(let i=0;i<G.ws.length;i++) if(G.ws[i]&&Math.abs(x-G.wsX[i])<G.wsW/2+6&&y>8&&y<WS_BY+8){tapWorkshop(i); return;}
@@ -1572,11 +1795,16 @@ function onTap(x,y,remote){
   if(x>=FX&&x<FX+FW&&y>=FY&&y<FY+FH) plantAt(x,y);
 }
 function hitJackal(j){
+  const tool=curTool();
   j.taps++; j.stun=.3; sfx('hit'); fx('dust',j.x,j.y);
-  if(j.taps>=j.need){
+  if(j.taps>=(tool==='stick'?JACKAL_KILL():j.need)){
     j.gone=true; G.jackals=G.jackals.filter(o=>o!==j);
     const cx=clamp(j.x,FX+16,FX+FW-16), cy=clamp(j.y,FY+24,FY+FH-8);
-    G.cages.push({x:cx,y:cy,t:15,max:15}); sfx('cage');
+    if(tool==='stick'){fx('puff',j.x,j.y-6); sfx('thud'); if(G.nightStats) G.nightStats.killed++;
+      if(j.carry){addAnimal(j.carry,clamp(cx+14,FX+12,FX+FW-12),cy+4,false); toast(`Killed the jackal and saved the ${ANIM[j.carry].name}!`);} else toast('Killed the jackal with the stick.');
+      return;}
+    if(G.nightStats&&nightish()) G.nightStats.caught++;
+    const life=isNight()?40:15; G.cages.push({x:cx,y:cy,t:life,max:life}); sfx('cage');
     if(j.carry){addAnimal(j.carry,clamp(cx+14,FX+12,FX+FW-12),cy+4,false); toast(`You saved the ${ANIM[j.carry].name}! Tap the cage to keep the jackal.`);}
     else toast('Trapped! Tap the cage to move it to the storehouse.');
   }
@@ -1588,8 +1816,8 @@ function hitMonkey(m){
 function collectCage(c){
   if(storeUsed()>=storeCap()){toast('The storehouse is full. Send goods to the market first.'); sfx('err'); return;}
   c.gone=true; G.cages=G.cages.filter(o=>o!==c);
-  G.store.jackal=(G.store.jackal||0)+1;
-  fx('fly',c.x,c.y,{item:'jackal',tx:WH.x,ty:WH.by-40}); sfx('pop');
+  const item=c.kind==='boar'?'boarcage':'jackal'; G.store[item]=(G.store[item]||0)+1;
+  fx('fly',c.x,c.y,{item,tx:WH.x,ty:WH.by-40}); sfx('pop');
 }
 function tapWorkshop(i){
   const w=G.ws[i], d=WS[w.type];
@@ -1677,13 +1905,15 @@ function render(){
   // workshops
   for(let i=0;i<G.ws.length;i++) drawWorkshop(i,t);
   // y-sorted entities
+  drawPen(g);
   const list=[];
   G.trees.forEach(tr=>list.push([tr.y,()=>drawTree(g,tr,t)]));
   G.products.forEach(p=>list.push([p.y-1,()=>drawProduct(p)]));
   G.animals.forEach(a=>list.push([a.y,()=>drawAnimal(a)]));
   G.cages.forEach(c=>list.push([c.y,()=>drawCage(c)]));
   G.elephants.forEach(e=>list.push([e.y,()=>drawElephantBoss(g,e,t)]));
-  G.jackals.forEach(j=>list.push([j.y,()=>{drawJackal(g,j.x,j.y,j.dir,j.walk,j.mv,j.stun); if(j.carry) drawCarried(j); tapPips(j.x,j.y-24,j.taps,j.need);}]));
+  G.jackals.forEach(j=>list.push([j.y,()=>{drawJackal(g,j.x,j.y,j.dir,j.walk,j.mv,j.stun); if(j.carry) drawCarried(j); }]));
+  G.boars.forEach(b=>list.push([b.y,()=>drawBoar(g,b.x,b.y,b.dir,b.walk,b.mv,b.stun)]));
   G.monkeys.forEach(m=>list.push([m.y,()=>{drawMonkey(g,m.x,m.y,m.dir,m.walk,m.mv,m.item,m.stun); if(m.state!=='scared') tapPips(m.x,m.y-32,m.taps,m.need);}]));
   list.sort((a,b)=>a[0]-b[0]).forEach(e=>e[1]());
   // lower buildings
@@ -1702,12 +1932,14 @@ function render(){
   G.boats.forEach(b=>{const p=b.t/b.dur; let x;
     if(p<.4){const q=p/.4; x=-60+(JETTY+60)*(1-Math.pow(1-q,2));} else if(p<.55) x=JETTY; else{const q=(p-.55)/.45; x=JETTY+(W+80-JETTY)*q*q;}
     drawBoat(g,x+8,b.spawned?null:b.cargo,t);});
+  drawNight(g,t);
   if(G.L.night){g.fillStyle='rgba(18,26,70,.28)'; g.fillRect(0,0,W,H);}
   drawEvents(g,t);
   // effects
   G.fx.forEach(f=>drawFx(f));
   G.floats.forEach(f=>{const a=1-f.t/1.4; g.globalAlpha=Math.max(0,a); g.font='800 18px '+FONT; g.textAlign='center'; g.lineWidth=4; g.strokeStyle='rgba(40,20,10,.7)';
     g.strokeText(f.text,f.x,f.y-f.t*30); g.fillStyle=f.color; g.fillText(f.text,f.x,f.y-f.t*30); g.globalAlpha=1;});
+  drawNightUI(g,t);
   drawBot(g);
 }
 function drawWorkshop(i,t){
@@ -1779,7 +2011,7 @@ function drawCarried(j){const g=ctx; g.save(); g.translate(j.x+j.dir*16,j.y-8); 
 function drawCage(c){
   const g=ctx;
   g.fillStyle='rgba(30,20,5,.22)'; ell(g,c.x,c.y+2,17,4); g.fill();
-  g.fillStyle='#9b7a4c'; ell(g,c.x,c.y-9,10,6); g.fill(); g.fillStyle='#7b5c36'; ell(g,c.x+8,c.y-12,4,3.5); g.fill();
+  const boar=c.kind==='boar'; g.fillStyle=boar?'#5b4636':'#9b7a4c'; ell(g,c.x,c.y-9,boar?11:10,boar?6.5:6); g.fill(); g.fillStyle=boar?'#3a2a20':'#7b5c36'; ell(g,c.x+8,c.y-12,4,3.5); g.fill();
   g.strokeStyle='#c79a4e'; g.lineWidth=2; g.beginPath(); for(let x=-13;x<=13;x+=5.2){g.moveTo(c.x+x,c.y); g.lineTo(c.x+x,c.y-21);} g.stroke();
   g.fillStyle='#8a6232'; g.fillRect(c.x-15,c.y-23,30,4); g.fillRect(c.x-15,c.y-1,30,3);
   const p=c.t/c.max; g.fillStyle='rgba(36,24,12,.7)'; rr(g,c.x-13,c.y+5,26,4,2); g.fill(); g.fillStyle=p<.3?'#e05a3a':'#e2b33c'; rr(g,c.x-12,c.y+5.5,24*p,3,1.5); g.fill();
@@ -1820,6 +2052,7 @@ function buildIcons(){
   ICON.buy_kappa=mkIcon(g=>{g.scale(.75,.75); drawKappa(g,0,20,1,0);});
   ICON.buy_cracker=mkIcon(g=>{g.fillStyle='#d8352a'; rr(g,-6,-10,12,22,3); g.fill(); g.fillStyle='#e2b33c'; g.fillRect(-6,-4,12,3); g.fillRect(-6,4,12,3); g.strokeStyle='#5b3a1f'; g.lineWidth=1.5; g.beginPath(); g.moveTo(0,-10); g.quadraticCurveTo(4,-15,2,-18); g.stroke(); g.fillStyle='#ffd23a'; ell(g,2,-18,2.5,2.5); g.fill();});
   ICON.money=mkIcon(g=>{g.scale(1.4,1.4); drawCoin(g);});
+  Object.entries(LIVE_BACK).forEach(([item,[k]])=>{ICON[item]=ICON['buy_'+k];});
 }
 let toastTimer=0;
 function toast(msg){if(ACTOR!=='remote') showToast(msg); if(NET.role==='host'&&ACTOR!=='local') NET.ev.push({toast:msg});}
@@ -1832,10 +2065,12 @@ let hudSig='';
 function renderHUD(){
   if(!G) return;
   const goals=Object.entries(G.L.goals);
-  const sig=G.money+'|'+goals.map(([k])=>G.collected[k]||0).join(',')+'|'+Math.floor(G.t)+'|'+G.state;
+  const sig=G.money+'|'+goals.map(([k])=>G.collected[k]||0).join(',')+'|'+Math.floor(G.t)+'|'+G.state+'|'+(G.dn?G.dn.phase+Math.floor(G.dn.t):'')+G.tool+G.shovel;
   if(sig===hudSig) return; hudSig=sig;
   $('#money').textContent='₹'+G.money.toLocaleString('en-IN');
-  const left=Math.max(0,timeLimit(G.L)-G.t); $('#time').textContent=fmtT(Math.ceil(left)); $('#timer').classList.toggle('low',left<=30);
+  const left=Math.max(0,timeLimit(G.L)-G.t), nt=isNight();
+  $('#time').textContent=nt?'☾ '+fmtT(Math.ceil(G.dn.len-G.dn.t)):fmtT(Math.ceil(left)); $('#timer').classList.toggle('low',!nt&&left<=30); $('#timer').classList.toggle('night',nt);
+  const tb=$('#btnTool'), nn=nightish(); tb.textContent=nn?(G.tool==='stick'?'Stick':'Net'):'Dig'; tb.setAttribute('aria-label',nn?'Tool: '+(G.tool==='stick'?'stick':'net'):'Shovel'); tb.classList.toggle('on',!nn&&G.shovel);
   $('#mdot').style.background=MEDAL_VAR[medalFor(G.L,G.t)];
   $('#goals').innerHTML=goals.map(([k,n])=>{
     const have=k==='money'?G.money:(G.collected[k]||0), done=have>=n;
@@ -1858,7 +2093,7 @@ function startLevel(i){
   $('#inGoals').innerHTML=Object.entries(G.L.goals).map(([k,n])=>k==='money'?`<li><img src="${ICON.money}" alt="">Have ₹${n.toLocaleString('en-IN')}</li>`:`<li><img src="${ICON[k]}" alt="">Collect ${n} ${plural(ITEMS[k].name.toLowerCase(),n)}</li>`).join('');
   $('#inTip').textContent=G.L.tip;
   $('#inStart').hidden=NET.role==='guest'; $('#inWait').hidden=NET.role!=='guest';
-  $('#inTimes').textContent=`Gold medal under ${fmtT(G.L.gold)}, silver under ${fmtT(G.L.silver)}. Time limit ${fmtT(timeLimit(G.L))}.`;
+  $('#inTimes').textContent=`Gold medal under ${fmtT(G.L.gold)}, silver under ${fmtT(G.L.silver)}. Time limit ${fmtT(timeLimit(G.L))}.${G.dn?' Night falls during this level; the clock pauses at night.':''}`;
   show('#ovIntro'); renderHUD(); fit();
 }
 function openMarket(){show('#ovMarket'); renderMarket(); NET.mkSig=marketSig();}
@@ -1870,11 +2105,15 @@ function renderMarket(){
   const keys=Object.keys(ITEMS).filter(k=>(G.store[k]||0)>0);
   $('#mkRows').innerHTML=keys.length?keys.map(k=>`<div class="mrow"><img src="${ICON[k]}" alt=""><div class="mname">${ITEMS[k].name} <span class="q">×${G.store[k]}</span><small>₹${ITEMS[k].price} each</small></div><div class="mbtns"><button class="sbtn" data-load="${k}" ${away||cu>=ac?'disabled':''}>+1</button><button class="sbtn" data-loadall="${k}" ${away||cu>=ac?'disabled':''}>All</button></div><span></span></div>`).join('')
     :'<p class="empty">Nothing stored yet. Tap eggs and other goods in the field to collect them.</p>';
+  const at=ANIM_TYPES.filter(k=>sellable(k).length);
+  $('#mkAnimals').innerHTML=at.length?'<h3>Animals</h3><p class="note" style="margin:0 0 4px">Selling live animals pays less than making products from them.</p>'+at.map(k=>{const list=sellable(k), item=liveItem(k,!!list[0].ready);
+    return `<div class="mrow"><img src="${ICON['buy_'+k]}" alt=""><div class="mname">${ITEMS[item].name} <span class="q">×${list.length}</span><small>₹${ITEMS[item].price} live</small></div><div class="mbtns"><button class="sbtn" data-animal="${k}" ${away||cu>=ac||nightish()?'disabled':''}>Sell 1</button></div><span></span></div>`;}).join(''):'';
   const ck=Object.keys(T.cargo).filter(k=>T.cargo[k]>0);
   $('#mkCargo').innerHTML=away?'':(ck.length?ck.map(k=>`<div class="mrow"><img src="${ICON[k]}" alt=""><div class="mname">${ITEMS[k].name} <span class="q">×${T.cargo[k]}</span></div><span class="mprice">₹${(T.cargo[k]*ITEMS[k].price).toLocaleString('en-IN')}</span><button class="sbtn alt" data-unload="${k}">−1</button></div>`).join(''):'<p class="empty">The auto is empty. Load goods from the storehouse above.</p>');
   if(away){const left=Math.ceil(autoTrip()-T.t); $('#mkStatus').textContent=T.sold?`Sold. The auto-rickshaw will be back about ${left}s after you return to the farm.`:`The auto-rickshaw is on its way to the market and will be back about ${left}s after you return to the farm.`;}
   else $('#mkStatus').textContent=cu?`This load sells for ₹${cargoValue().toLocaleString('en-IN')}.`:'';
-  $('#mkGo').disabled=away||cu===0||evOn('hartal');
+  $('#mkGo').disabled=away||cu===0||evOn('hartal')||nightish();
+  if(nightish()&&!away) $('#mkStatus').textContent='The market is closed at night. The auto can go again in the morning.';
   if(evOn('hartal')&&!away) $('#mkStatus').textContent=`Hartal: the market is closed for about ${Math.ceil(G.ev.dur-G.ev.t)}s.`;
   const sl=storeLvl()+1, su=$('#mkStoreUp'); su.hidden=sl>3;
   if(sl<=3){su.textContent=`Expand to ${UPG.store.cap[sl]} spaces · ₹${STORE_UP_COST[sl].toLocaleString('en-IN')} (this level)`; su.disabled=G.money<STORE_UP_COST[sl];}
@@ -1894,6 +2133,8 @@ function marketUpgrade(){
 }
 $('#mkUp').onclick=()=>{if(!G) return; if(NET.role==='guest') NET.send({t:'upauto'}); else{asActor('local',marketUpgrade); renderMarket();}};
 function marketAction(a,k){
+  if(a==='animal'){sellAnimal(k); return;}
+  if(a==='unload'&&LIVE_BACK[k]){if(G.truck.state==='home') unloadAnimal(k); return;}
   if(!G||!ITEMS[k]) return; const T=G.truck; if(T.state!=='home') return;
   const room=autoCap()-cargoUsed();
   if(a==='load'){if(room>0&&G.store[k]>0){G.store[k]--; T.cargo[k]=(T.cargo[k]||0)+1;}}
@@ -1903,12 +2144,13 @@ function marketAction(a,k){
 function marketGo(){
   const T=G.truck; if(T.state!=='home'||!cargoUsed()) return;
   if(evOn('hartal')){toast('Hartal today. The market is closed, so the auto can’t go yet.'); sfx('err'); return;}
+  if(nightish()){toast('The market is closed at night.'); sfx('err'); return;}
   T.state='going'; T.t=0; T.sold=false; sfx('depart'); toast('The auto is off to the market.');
 }
-const marketSig=()=>JSON.stringify([storeLvl(),G.money>=STORE_UP_COST[Math.min(3,storeLvl()+1)],evOn('hartal'),G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
+const marketSig=()=>JSON.stringify([nightish(),G.animals.length,storeLvl(),G.money>=STORE_UP_COST[Math.min(3,storeLvl()+1)],evOn('hartal'),G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
 $('#ovMarket').addEventListener('click',e=>{
-  const b=e.target.closest('button[data-load],button[data-loadall],button[data-unload]'); if(!b||!G) return;
-  const a=b.dataset.load?'load':b.dataset.loadall?'loadall':'unload', k=b.dataset.load||b.dataset.loadall||b.dataset.unload;
+  const b=e.target.closest('button[data-load],button[data-loadall],button[data-unload],button[data-animal]'); if(!b||!G) return;
+  const a=b.dataset.load?'load':b.dataset.loadall?'loadall':b.dataset.animal?'animal':'unload', k=b.dataset.load||b.dataset.loadall||b.dataset.animal||b.dataset.unload;
   playSfx(a==='unload'?'pop':'load');
   if(NET.role==='guest') NET.send({t:'mk',a,k}); else{asActor('local',()=>marketAction(a,k)); renderMarket();}
 });
@@ -1921,12 +2163,13 @@ $('#psResume').onclick=()=>hide('#ovPause');
 $('#psRestart').onclick=()=>startLevel(G.li);
 $('#psMap').onclick=()=>goMap();
 function syncSoundUI(){
-  [['#mapMusic','Music',SAVE.music],['#mapSfx','Sound effects',SAVE.sfx]].forEach(([id,l,on])=>{const b=$(id); b.textContent=l+(on?' on':' off'); b.setAttribute('aria-pressed',on);});
+  [['#mapMusic','Music',SAVE.music],['#mapSfx','Sound effects',SAVE.sfx],['#mapNights','Nights',SAVE.nights!==false]].forEach(([id,l,on])=>{const b=$(id); b.textContent=l+(on?' on':' off'); b.setAttribute('aria-pressed',on);});
   $('#psMusic').textContent='Music: '+(SAVE.music?'on':'off'); $('#psSfx').textContent='Sound effects: '+(SAVE.sfx?'on':'off');
 }
 function toggleSound(k){SAVE[k]=!SAVE[k]; persist(); audio(); setVolumes(); syncSoundUI(); if(k==='sfx') sfx('click');}
 $('#psMusic').onclick=$('#mapMusic').onclick=()=>toggleSound('music');
 $('#psSfx').onclick=$('#mapSfx').onclick=()=>toggleSound('sfx');
+$('#mapNights').onclick=()=>{SAVE.nights=SAVE.nights===false; persist(); syncSoundUI(); showToast(SAVE.nights?'Night falls in levels 3 and up.':'Nights are off: levels stay in daytime.');};
 document.addEventListener('click',e=>{if(e.target.closest('.btn,.lvl,.icon-btn,.linkish')) sfx('click');});
 
 function showResult(){
@@ -2164,7 +2407,7 @@ function onNet(d){
   if(NET.role==='host'){
     if(!G) return;
     asActor('remote',()=>{
-      if(d.t==='tap'&&typeof d.x==='number'&&typeof d.y==='number') onTap(d.x,d.y,true);
+      if(d.t==='tap'&&typeof d.x==='number'&&typeof d.y==='number'){NET.remoteTool=d.tool; NET.remoteShovel=!!d.sh; onTap(d.x,d.y,true);}
       else if(d.t==='buy'&&BUY[d.k]&&G.state==='play'&&G.L.buy.includes(d.k)) buy(d.k);
       else if(d.t==='mk'&&G.state==='play') marketAction(d.a,d.k);
       else if(d.t==='go'&&G.state==='play') marketGo();
@@ -2186,7 +2429,9 @@ function snap(){
     p:G.products.map(p=>[p.id,p.type,r1(p.x),r1(p.y),r1(p.life),r1(p.age)]),
     j:G.jackals.map(j=>[j.id,r1(j.x),r1(j.y),j.dir,j.taps,r1(j.stun),j.carry||0,j.mv?1:0]),
     mk:G.monkeys.map(m=>[m.id,r1(m.x),r1(m.y),m.dir,m.taps,r1(m.stun),m.item||0,m.mv?1:0,m.state==='scared'?1:0]),
-    c:G.cages.map(c=>[r1(c.x),r1(c.y),r1(c.t),c.max]),
+    c:G.cages.map(c=>[r1(c.x),r1(c.y),r1(c.t),c.max,c.kind==='boar'?1:0]),
+    bo:G.boars.map(b=>[b.id,r1(b.x),r1(b.y),b.dir,b.taps,r1(b.stun),b.mv?1:0,b.state==='flee'?1:0]),
+    dn:G.dn?[PHASES.indexOf(G.dn.phase),r1(G.dn.t),G.dn.len||0,Math.round(G.dn.pen||0)]:0,
     b:G.boats.map(b=>[b.id,r1(b.t),b.dur,b.cargo,b.spawned?1:0]),
     el:G.elephants.map(e=>[e.id,r1(e.x),r1(e.y),e.dir,e.pts,e.need,e.state==='flee'?1:0]),
     ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue,r1(w.broken||0)]),
@@ -2209,7 +2454,12 @@ function applySnap(d){
   G.autoBoost=d.ab||0; G.storeBoost=d.sb||0;
   const pOld={}; G.products.forEach(p=>{pOld[p.id]=p;});
   G.products=d.p.map(([id,type,x,y,life,age])=>Object.assign(pOld[id]||{id,age},{type,x,y,life,max:life}));
-  G.cages=d.c.map(([x,y,t,max])=>({x,y,t,max}));
+  G.cages=d.c.map(([x,y,t,max,k])=>({x,y,t,max,kind:k?'boar':'jackal'}));
+  G.boars=syncList(G.boars,d.bo||[],([id,x,y,dir,taps,stun,mv,fl],o)=>Object.assign(o||{id,walk:0},{tx:x,ty:y,dir,taps,stun,mv:!!mv,state:fl?'flee':'raid'}));
+  if(d.dn){const ph=PHASES[d.dn[0]], was=G.dn&&G.dn.phase; G.dn=Object.assign(G.dn||{},{phase:ph,t:d.dn[1],len:d.dn[2],pen:d.dn[3]});
+    if(ph==='night'&&MUS.mode!=='night') setMusic('night'); else if((ph==='dawn'||ph==='day')&&MUS.mode==='night') setMusic(G.L.rush?'rush':'play');
+    if(ph!=='day'&&was==='day') G.shovel=false;}
+  else G.dn=null;
   const bOld={}; G.boats.forEach(b=>{bOld[b.id]=b;});
   G.boats=d.b.map(([id,t,dur,cargo,sp])=>Object.assign(bOld[id]||{id},{t,dur,cargo,spawned:!!sp}));
   d.ws.forEach((r,i)=>{const w=G.ws[i]; if(w&&r){w.built=!!r[0]; w.busy=!!r[1]; w.t=r[2]; w.dur=r[3]; w.queue=r[4]; w.broken=r[5]||0;}});
@@ -2229,10 +2479,11 @@ function applySnap(d){
 }
 function guestTick(dt){
   const k=Math.min(1,dt*10);
-  for(const o of G.animals.concat(G.jackals,G.monkeys,G.elephants)){if(o.tx===undefined) continue; o.x+=(o.tx-o.x)*k; o.y+=(o.ty-o.y)*k; if(o.mv) o.walk+=dt;}
+  for(const o of G.animals.concat(G.jackals,G.monkeys,G.elephants,G.boars)){if(o.tx===undefined) continue; o.x+=(o.tx-o.x)*k; o.y+=(o.ty-o.y)*k; if(o.mv) o.walk+=dt;}
   if(G.state==='play'){
     G.products.forEach(p=>{p.age+=dt; p.life-=dt;});
     if(G.ev) G.ev.t+=dt;
+    if(G.dn) G.dn.t+=dt;
     const T=G.truck; if(T.state==='going'&&!evOn('procession')){T.t=Math.min(T.t+dt,autoTrip()); truckPulse(T,T.t/autoTrip(),dt);}
     G.boats.forEach(b=>{b.t+=dt; boatPulse(b,dt);});
     G.ws.forEach(w=>{if(w&&w.busy) w.t=Math.min(w.t+dt,w.dur);});
@@ -2283,10 +2534,13 @@ function botChoose(){
   const free=storeCap()-storeUsed(), inField=o=>o.x>FX&&o.x<FX+FW&&o.y>FY-10&&o.y<FY+FH+10;
   const el=G.elephants.find(e=>e.state!=='flee'&&inField(e));
   if(el) return botTap(()=>el.gone||el.state==='flee'?null:[el.x+el.dir*10,el.y-26],'Fighting Ottakomban');
+  const bo=G.boars.find(b=>b.state!=='flee'&&inField(b));
+  if(bo) return botTap(()=>bo.gone||bo.state==='flee'?null:[bo.x+bo.dir*4,bo.y-6],'Chasing the wild boar');
   const j=G.jackals.find(j=>j.carry&&inField(j))||G.jackals.find(j=>j.state==='hunt'&&inField(j));
   if(j) return botTap(()=>j.gone?null:[j.x+3*j.dir,j.y-4],'Chasing the jackal');
   const m=G.monkeys.find(m=>m.state!=='scared'&&inField(m));
   if(m) return botTap(()=>m.gone||m.state==='scared'?null:[m.x,m.y-10],'Shooing the monkey');
+  if(isNight()&&G.dn.pen<60) return botTap(()=>isNight()?[PEN.x,PEN.y]:null,'Fixing the pen');
   const wsAct=botWorkshop();
   if(free>0&&G.products.length){
     const p=G.products.slice().sort((a,b)=>(needOf(b.type)-needOf(a.type))||(a.life-b.life))[0];
@@ -2307,7 +2561,7 @@ function botChoose(){
     }
   }
   if(G.water>=2){const tr=G.trees.find(t=>(t.wet||0)<=0); if(tr) return botTap(()=>G.trees.includes(tr)?[tr.x,tr.y-20]:null,'Watering the trees');}
-  if(G.truck.state==='home'&&!evOn('hartal')){
+  if(G.truck.state==='home'&&!evOn('hartal')&&!nightish()){
     const keep=botKeep(), sell=Object.keys(G.store).filter(k=>G.store[k]>0&&!keep[k]), n=sell.reduce((a,k)=>a+G.store[k],0);
     const needCash=G.L.goals.money&&G.money<G.L.goals.money;
     if(n>0&&(free<=2||n>=autoCap()*.6||(needCash&&n>=2)))

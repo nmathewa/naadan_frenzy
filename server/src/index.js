@@ -1,7 +1,7 @@
 /*
  * index.js — Worker entry point.
  *
- *   GET /health            -> {ok:true, version}   (CORS *)
+ *   GET / or /health       -> {ok:true, version}   (CORS *)
  *   GET /ws/<CODE>?...     -> WebSocket, handed to the Room Durable Object for CODE
  *   anything else          -> 404
  *
@@ -43,7 +43,7 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
 
-    if (url.pathname === '/health' && request.method === 'GET') {
+    if ((url.pathname === '/health' || url.pathname === '/') && request.method === 'GET') {
       return json({ ok: true, version: Core.VERSION ?? null });
     }
 

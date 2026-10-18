@@ -9,7 +9,7 @@
 import WebSocket from 'ws';
 
 const BASE = process.argv[2] || 'ws://localhost:8787';
-const V = '1';
+let V = '1'; // replaced by the server's engine version from /health
 const GRACE_MS = 3000; // must match the server's GRACE_MS for the expiry check
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -60,6 +60,7 @@ async function refused(code, opts, expect) {
 }
 
 async function main() {
+  V = (await (await fetch(BASE.replace(/^ws/, 'http') + '/health')).json()).version;
   const code = randomCode();
   console.log(`server ${BASE}, farm ${code}`);
 

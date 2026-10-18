@@ -120,7 +120,10 @@ const EVENTS={
   powercut:{name:'Power cut',note:'workshops stopped',dur:18,msg:'Power cut! The workshops stop until it comes back.'},
   procession:{name:'Temple procession',note:'road blocked',dur:25,msg:'A temple procession is blocking the road. The auto has to wait.'},
   coconut:{name:'Coconut falling',note:'',dur:3,msg:'Look out! A coconut is falling.'},
+  // Takes turns with the temple procession in the same festival slot, so festivals don't come more often.
+  church:{name:'Church feast',note:'market pays 50% more',dur:25,msg:'Palli perunnal! The church feast crowd pays 50% more at the market. Send the auto now.'},
 };
+const FEST_BONUS=1.5;
 const EVENT_KEYS=Object.keys(EVENTS);
 const PEN={x:210,y:300,w:128,h:78};
 const DUSK=5, DAWN=3, PHASES=['day','dusk','night','dawn'];
@@ -200,7 +203,7 @@ function addTree(k,instant){
 }
 const storeUsed=()=>Object.values(G.store).reduce((a,b)=>a+b,0);
 const cargoUsed=()=>Object.values(G.truck.cargo).reduce((a,b)=>a+b,0);
-const cargoValue=()=>Object.entries(G.truck.cargo).reduce((a,[k,n])=>a+n*ITEMS[k].price,0);
+const cargoValue=()=>Math.round(Object.entries(G.truck.cargo).reduce((a,[k,n])=>a+n*ITEMS[k].price,0)*(evOn('church')?FEST_BONUS:1));
 
 function dropProduct(type,x,y,life){
   if(G.hard) life*=.7;
@@ -377,7 +380,11 @@ function updEvents(dt){
   }
   G.nextEv-=dt;
   if(nightish()) return;
-  if(G.nextEv<=0){const pool=EVENT_KEYS.filter(k=>k!==G.lastEv&&k!=='powercut'); const k=pool[Math.floor(Math.random()*pool.length)]; G.lastEv=k; startEvent(k);}
+  if(G.nextEv<=0){
+    const pool=EVENT_KEYS.filter(k=>k!==G.lastEv&&k!=='powercut'&&k!=='church'); let k=pool[Math.floor(Math.random()*pool.length)];
+    // One festival slot: temple procession and church feast take turns (the first one is a coin toss).
+    if(k==='procession'){k=G.lastFest?(G.lastFest==='procession'?'church':'procession'):(Math.random()<.5?'procession':'church'); G.lastFest=k;}
+    G.lastEv=k==='church'?'procession':k; startEvent(k);}
 }
 function spawnElephant(){
   const side=Math.random()<.5?-1:1;
@@ -739,8 +746,8 @@ function botChoose(){
   if(G.truck.state==='home'&&!evOn('hartal')&&!nightish()){
     const keep=botKeep(), sell=Object.keys(G.store).filter(k=>G.store[k]>0&&!keep[k]), n=sell.reduce((a,k)=>a+G.store[k],0);
     const needCash=G.L.goals.money&&G.money<G.L.goals.money;
-    if(n>0&&(free<=2||n>=autoCap()*.6||(needCash&&n>=2)))
-      return{get:()=>[PARK.x,PARK.y-30],intent:'Off to the market',act:()=>{sell.forEach(k=>marketAction('loadall',k)); marketGo();}};
+    if(n>0&&(free<=2||n>=autoCap()*.6||(needCash&&n>=2)||(evOn('church')&&n>=2)))
+      return{get:()=>[PARK.x,PARK.y-30],intent:evOn('church')?'Selling at the feast':'Off to the market',act:()=>{sell.forEach(k=>marketAction('loadall',k)); marketGo();}};
     if(free===0){const k=Object.keys(G.store).find(k=>G.store[k]>0); if(k) return{get:()=>[PARK.x,PARK.y-30],intent:'Making room',act:()=>{marketAction('loadall',k); marketGo();}};}
   }
   return null;
@@ -785,7 +792,7 @@ return {
 };
 }
 
-const API={createEngine,VERSION:'1',LEVEL_COUNT:LEVELS.length,
+const API={createEngine,VERSION:'2',LEVEL_COUNT:LEVELS.length,
   data:{W,H,FX,FY,CELL,COLS,ROWS,FW,FH,WS_BY,WS_KEYS,slotGeom,WH,WELL,PARK,JETTY,TREE_SLOTS,ITEMS,MASS,BUY,ANIM,ANIM_TYPES,TREE,TREE_TYPES,WS,UPG,UPG_COST,LEVELS,REGIONS,regionOf,
     AUTO_UP_COST,STORE_UP_COST,rnd,dist,clamp,timeLimit,EVENTS,EVENT_KEYS,PEN,DUSK,DAWN,PHASES,liveItem,LIVE_BACK,medalFor,plural,r1,BOT_SKILL}};
 root.NaadanCore=API;

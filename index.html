@@ -355,7 +355,7 @@ const bg=document.createElement('canvas'), bctx=bg.getContext('2d');
 let S=1, DPR=1;
 
 // ---------- save ----------
-const APP_VERSION='v24';
+const APP_VERSION='v25';
 // The online game server (Cloudflare). Empty: fall back to the old phone-to-phone link. ?server=<url> overrides it.
 const DEFAULT_SERVER='https://naadan-frenzy-server.nmanirmal.workers.dev';
 const SERVER_URL=(()=>{try{const q=new URLSearchParams(location.search).get('server'); if(q) return q;}catch(e){} return DEFAULT_SERVER;})();
@@ -560,6 +560,7 @@ function playSfx(n){
     case 'ev_monsoon': noise(t,1.6,.22,'lowpass',260,.7,undefined,.15); noise(t+.1,.8,.12,'lowpass',600,.7); break;
     case 'ev_powercut': osc('square',900,t,.35,.06,{f2:60,filter:'lowpass',ff:2000}); break;
     case 'ev_procession': [0,.12,.24,.36,.44,.52,.6,.72].forEach((d,i)=>i%3?drumSlap(t+d,.45):drumLow(t+d,.6)); break;
+    case 'ev_church': [0,.7,1.4].forEach(d=>bell(t+d,392,.13)); [523,659,784,1047].forEach((f,i)=>osc('sawtooth',f,t+.35+i*.16,i===3?.5:.14,.05,{filter:'lowpass',ff:1800})); break;
     case 'ev_coconut': noise(t,.7,.12,'bandpass',1200,2,undefined,.5); break;
     case 'eaten':
     case 'fail': [392,370,349,311].forEach((f,i)=>osc('sawtooth',f,t+i*.32,i===3?.9:.28,.09,{filter:'lowpass',ff:1400,f2:i===3?290:undefined})); break;
@@ -1115,6 +1116,28 @@ function drawDrummer(g,x,y,t){
   g.strokeStyle='#5b3a1f'; g.lineWidth=1.2; g.beginPath(); g.moveTo(-1,-10); g.lineTo(-6,-14-Math.sin(t*16)*2); g.stroke();
   g.restore();
 }
+// Church feast walkers: a gold cross, red-and-gold muthukuda umbrellas and a brass band.
+function drawFeastWalker(g,x,y,t,kind){
+  const b=Math.abs(Math.sin(t*6))*1.1;
+  g.save(); g.translate(x,y-b);
+  g.fillStyle='rgba(20,15,5,.2)'; ell(g,0,b+2,6,2); g.fill();
+  g.fillStyle=kind==='band'?'#2f4f8a':'#f4f0e6'; rr(g,-3.5,-14,7,14,2); g.fill();
+  if(kind!=='band'){g.fillStyle='#e2b33c'; g.fillRect(-3.5,-4,7,1.5);}
+  g.fillStyle='#6b4a30'; ell(g,0,-17,3.2,3.2); g.fill();
+  if(kind==='cross'){
+    g.strokeStyle='#5b3a1f'; g.lineWidth=1.4; g.beginPath(); g.moveTo(3,-8); g.lineTo(3,-40); g.stroke();
+    g.fillStyle='#e2b33c'; g.fillRect(1.5,-50,3,13); g.fillRect(-2,-46,10,3);
+  }else if(kind==='umbrella'){
+    g.strokeStyle='#5b3a1f'; g.lineWidth=1.3; g.beginPath(); g.moveTo(2,-10); g.lineTo(2,-36); g.stroke();
+    g.fillStyle='#c8322a'; ell(g,2,-38,11,4.5); g.fill();
+    g.fillStyle='#e2b33c'; ell(g,2,-42,7,3); g.fill(); ell(g,2,-45.5,1.8,1.8); g.fill();
+    for(let k=-9;k<=9;k+=3){ell(g,2+k,-34.2+Math.abs(k)*.06,1,1); g.fill();}
+  }else{
+    g.strokeStyle='#e2b33c'; g.lineWidth=1.6; g.beginPath(); g.moveTo(2,-16); g.lineTo(10,-14+Math.sin(t*10)); g.stroke();
+    g.fillStyle='#e2b33c'; g.beginPath(); g.moveTo(10,-17); g.lineTo(13,-12); g.lineTo(9,-11); g.closePath(); g.fill();
+  }
+  g.restore();
+}
 function drawEvents(g,t){
   const e=G&&G.ev; if(!e) return;
   if(e.type==='monsoon'){
@@ -1126,6 +1149,10 @@ function drawEvents(g,t){
     const q=Math.min(1,e.t/e.dur), x=W+70-(W+220)*q;
     drawElephant(g,x,594,-1,t,true,{decor:true,tusks:2,s:.62});
     drawDrummer(g,x+44,596,t); drawDrummer(g,x+58,594,t+.3); drawDrummer(g,x+72,596,t+.6);
+  }
+  if(e.type==='church'){
+    const q=Math.min(1,e.t/e.dur), x=-60+(W+200)*q;
+    [['cross',0],['umbrella',-16],['umbrella',-30],['umbrella',-44],['band',-60],['band',-73],['band',-86]].forEach(([k,dx],i)=>drawFeastWalker(g,x+dx,594+(i%2?2:0),t+i*.25,k));
   }
   if(e.type==='coconut'&&!e.hit){
     const q=Math.min(1,e.t/.8);
@@ -1546,6 +1573,7 @@ function renderMarket(){
   else $('#mkStatus').textContent=cu?`This load sells for ₹${cargoValue().toLocaleString('en-IN')}.`:'';
   $('#mkGo').disabled=away||cu===0||evOn('hartal')||nightish();
   if(nightish()&&!away) $('#mkStatus').textContent='The market is closed at night. The auto can go again in the morning.';
+  if(evOn('church')&&!away&&!nightish()) $('#mkStatus').textContent=`Church feast: the market pays 50% more for about ${Math.ceil(G.ev.dur-G.ev.t)}s. `+(cu?`This load sells for ₹${cargoValue().toLocaleString('en-IN')} if the auto gets there in time.`:'Load the auto and send it now.');
   if(evOn('hartal')&&!away) $('#mkStatus').textContent=`Hartal: the market is closed for about ${Math.ceil(G.ev.dur-G.ev.t)}s.`;
   const sl=storeLvl()+1, su=$('#mkStoreUp'); su.hidden=sl>3;
   if(sl<=3){su.textContent=`Expand to ${UPG.store.cap[sl]} spaces · ₹${STORE_UP_COST[sl].toLocaleString('en-IN')} (this level)`; su.disabled=G.money<STORE_UP_COST[sl];}
@@ -1554,7 +1582,7 @@ function renderMarket(){
 }
 $('#mkStoreUp').onclick=()=>{if(!G) return; if(NET.role==='guest') NET.send({t:'upstore'}); else{ENG.input(ME,{t:'upstore'}); renderMarket();}};
 $('#mkUp').onclick=()=>{if(!G) return; if(NET.role==='guest') NET.send({t:'upauto'}); else{ENG.input(ME,{t:'upauto'}); renderMarket();}};
-const marketSig=()=>JSON.stringify([nightish(),G.animals.length,storeLvl(),G.money>=STORE_UP_COST[Math.min(3,storeLvl()+1)],evOn('hartal'),G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
+const marketSig=()=>JSON.stringify([nightish(),evOn('church'),G.animals.length,storeLvl(),G.money>=STORE_UP_COST[Math.min(3,storeLvl()+1)],evOn('hartal'),G.money>=AUTO_UP_COST[Math.min(3,autoLvl()+1)],autoLvl(),G.store,G.truck.cargo,G.truck.state,G.truck.sold,storeCap(),autoCap(),G.truck.state==='home'?0:Math.ceil(autoTrip()-G.truck.t)]);
 $('#ovMarket').addEventListener('click',e=>{
   const b=e.target.closest('button[data-load],button[data-loadall],button[data-unload],button[data-animal]'); if(!b||!G) return;
   const a=b.dataset.load?'load':b.dataset.loadall?'loadall':b.dataset.animal?'animal':'unload', k=b.dataset.load||b.dataset.loadall||b.dataset.animal||b.dataset.unload;

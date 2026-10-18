@@ -106,6 +106,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .code{font-size:44px;font-weight:800;letter-spacing:.25em;text-align:center;color:var(--laterite);font-variant-numeric:tabular-nums;padding-left:.25em}
 .join-row{display:flex;gap:8px}
 .seg{display:flex;gap:6px}
+.hard-note{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:var(--laterite);color:var(--cream);font-weight:700;font-size:14px;line-height:1.35}
 .segb{flex:1;min-height:42px;border:0;border-radius:10px;background:rgba(58,36,20,.08);color:var(--ink);font-weight:700;font-size:15px;box-shadow:inset 0 0 0 2px rgba(107,79,55,.35)}
 .segb[aria-pressed="true"]{background:#1f9fae;color:#fff;box-shadow:none}
 .join-row input{flex:1;min-width:0;font:800 26px var(--display);letter-spacing:.2em;text-transform:uppercase;text-align:center;padding:6px 8px;border-radius:10px;border:2px solid var(--ink-soft);background:#fffaf0;color:var(--ink);-webkit-user-select:text;user-select:text}
@@ -196,6 +197,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
       <div class="panel">
         <p class="eyebrow" id="inNum">Level 1</p>
         <h2 id="inName"></h2>
+        <p class="hard-note" id="inHard" hidden>Co-op challenge: bigger goals, more jackals and monkeys, hungrier animals and faster spoiling. You earn 1.5× gold coins.</p>
         <div class="kasavu"></div>
         <h3>Goals</h3>
         <ul class="goal-list" id="inGoals"></ul>
@@ -895,12 +897,22 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function randField(m){m=m||14; return{x:FX+m+Math.random()*(FW-2*m),y:FY+m+Math.random()*(FH-2*m)}}
 function cellCenter(i){return[FX+(i%COLS)*CELL+CELL/2,FY+((i/COLS)|0)*CELL+CELL/2]}
 
+// Co-op challenge: playing with a friend or with Kuttan makes every level much harder
+function hardLevel(L,li){
+  const H=Object.assign({},L,{hard:true,goals:{}});
+  for(const k in L.goals) H.goals[k]=k==='money'?Math.round(L.goals.money*1.8/50)*50:Math.ceil(L.goals[k]*1.8);
+  H.gold=Math.round(L.gold*1.2); H.silver=Math.round(L.silver*1.25);
+  H.jackal={first:Math.round((L.jackal?L.jackal.first:35)*.6),every:Math.round((L.jackal?L.jackal.every:40)*.5)};
+  if(L.monkey||li>=2) H.monkey={first:Math.round((L.monkey?L.monkey.first:30)*.6),every:Math.round((L.monkey?L.monkey.every:36)*.5)};
+  return H;
+}
 function newGame(li){
-  const L=LEVELS[li];
+  const L=(coop()||BOT.armed)?hardLevel(LEVELS[li],li):LEVELS[li];
   G={li,L,money:L.start,t:0,state:'intro',grass:new Float32Array(COLS*ROWS),gT:new Float32Array(COLS*ROWS),
     animals:[],trees:[],products:[],jackals:[],monkeys:[],cages:[],boats:[],fx:[],floats:[],
     store:{},collected:{},ws:[null,null,null],water:wellCap(),wellT:0,truck:{state:'home',t:0,cargo:{},sold:false},
     nextJ:L.jackal?L.jackal.first:Infinity,nextM:L.monkey?L.monkey.first:Infinity,wonT:0};
+  G.hard=!!L.hard;
   WS_KEYS.forEach((k,i)=>{if(L.ws&&L.ws.includes(k)) G.ws[i]={type:k,built:!!(L.built&&L.built.includes(k)),busy:false,t:0,dur:1,queue:0};});
   for(const k in (L.animals||{})) for(let i=0;i<L.animals[k];i++){const p=randField(30); addAnimal(k,p.x,p.y,false);}
   (L.trees||[]).forEach(k=>addTree(k,true));
@@ -927,6 +939,7 @@ const cargoValue=()=>Object.entries(G.truck.cargo).reduce((a,[k,n])=>a+n*ITEMS[k
 
 let UID=0;
 function dropProduct(type,x,y,life){
+  if(G.hard) life*=.7;
   G.products.push({id:++UID,type,x:clamp(x,FX+8,FX+FW-8),y:clamp(y,FY+8,FY+FH-6),life,max:life,age:0});
 }
 function collect(p){
@@ -996,7 +1009,7 @@ function nearestGrass(x,y){
 }
 function updAnimal(a,dt){
   const st=ANIM[a.type]; a.mv=false;
-  a.food-=dt/st.hunger;
+  a.food-=dt/st.hunger*(G.hard?1.3:1);
   if(a.food<=0){a.food=0; a.starve+=dt; if(!a.warned){a.warned=true; sfx('hungry');}
     if(a.starve>=st.starve){a.dead=true; fx('puff',a.x,a.y-6); toast(`A ${st.name} starved. Keep grass growing in the field.`); return;}}
   else{a.starve=0; if(a.food>.3) a.warned=false;}
@@ -1016,7 +1029,7 @@ function updAnimal(a,dt){
   if(a.wait>0){a.wait-=dt; return;}
   if(moveTo(a,a.tx,a.ty,st.speed,dt)){a.wait=rnd(.5,2.5); const p=randField(); a.tx=p.x; a.ty=p.y;}
 }
-function makeJackal(x,y){return{id:++UID,x,y,dir:1,taps:0,need:5,stun:0,state:'hunt',target:null,carry:null,t:0,think:0,walk:0,mv:false,gone:false};}
+function makeJackal(x,y){return{id:++UID,x,y,dir:1,taps:0,need:G.hard?8:5,stun:0,state:'hunt',target:null,carry:null,t:0,think:0,walk:0,mv:false,gone:false};}
 function spawnJackal(){
   const side=Math.random()<.5?-1:1, y=FY+40+Math.random()*(FH-80);
   const j=makeJackal(side<0?-24:W+24,y); j.dir=-side; G.jackals.push(j);
@@ -1025,7 +1038,7 @@ function spawnJackal(){
 function spawnMonkey(){
   const side=Math.random()<.5?-1:1, y=FY+30+Math.random()*(FH-60);
   sfx('chatter');
-  G.monkeys.push({id:++UID,x:side<0?-20:W+20,y,dir:-side,taps:0,need:3,stun:0,state:'seek',item:null,target:null,t:0,think:0,walk:0,mv:false,gone:false});
+  G.monkeys.push({id:++UID,x:side<0?-20:W+20,y,dir:-side,taps:0,need:G.hard?5:3,stun:0,state:'seek',item:null,target:null,t:0,think:0,walk:0,mv:false,gone:false});
 }
 function fleeTo(o,sp,dt){const tx=o.x<W/2?-50:W+50; moveTo(o,tx,o.y,sp,dt); if(o.x<-40||o.x>W+40) o.gone=true;}
 function updJackal(j,dt){
@@ -1035,7 +1048,7 @@ function updJackal(j,dt){
     j.think-=dt;
     if(j.think<=0||!j.target||j.target.dead){j.think=.5; let b=null,bd=1e9; for(const a of G.animals){if(a.enter||a.dead) continue; const d=dist(a.x,a.y,j.x,j.y); if(d<bd){bd=d;b=a;}} j.target=b;}
     if(!j.target||j.t>24){j.state='flee'; return;}
-    moveTo(j,j.target.x,j.target.y,26,dt);
+    moveTo(j,j.target.x,j.target.y,G.hard?34:26,dt);
     if(dist(j.x,j.y,j.target.x,j.target.y)<9){j.target.dead=true; j.carry=j.target.type; j.state='flee'; sfx('squawk');
       toast(`The jackal grabbed a ${ANIM[j.carry].name}. Tap it fast to make it let go!`);}
   }else fleeTo(j,j.carry?34:42,dt);
@@ -1047,7 +1060,7 @@ function updMonkey(m,dt){
     m.think-=dt;
     if(m.think<=0||!m.target||!G.products.includes(m.target)){m.think=.4; let b=null,bd=1e9; for(const p of G.products){const d=dist(p.x,p.y,m.x,m.y); if(d<bd){bd=d;b=p;}} m.target=b;}
     if(!m.target){if(m.t>14) m.state='leave'; else moveTo(m,W/2,FY+FH/2,30,dt); return;}
-    moveTo(m,m.target.x,m.target.y,42,dt);
+    moveTo(m,m.target.x,m.target.y,G.hard?52:42,dt);
     if(dist(m.x,m.y,m.target.x,m.target.y)<8){G.products.splice(G.products.indexOf(m.target),1); m.item=m.target.type; m.target=null; m.state='leave'; sfx('chatter');}
   }else fleeTo(m,m.state==='scared'?85:50,dt);
 }
@@ -1297,11 +1310,11 @@ function startLevel(i){
   if(NET.role==='host') NET.send({t:'start',li:i});
   UPV=NET.role==='guest'?NET.up:null;
   newGame(i); botStart(); hudSig=''; setMusic(i===LEVELS.length-1?'rush':'play');
-  $('#lvlName').textContent=`${i+1}. ${G.L.name}`;
+  $('#lvlName').textContent=`${i+1}. ${G.L.name}${G.L.hard?' · Hard':''}`;
   $('#buybar').innerHTML=G.L.buy.map(k=>`<button class="buy" data-buy="${k}" aria-label="Buy ${BUY[k].name} for ₹${BUY[k].cost}"><img src="${ICON['buy_'+k]}" alt=""><span class="nm">${BUY[k].name}</span><span class="pr">₹${BUY[k].cost}</span></button>`).join('');
   OVS.forEach(hide);
   $('#inNum').textContent=`Level ${i+1} of ${LEVELS.length}`;
-  $('#inName').textContent=G.L.name;
+  $('#inName').textContent=G.L.name; $('#inHard').hidden=!G.L.hard;
   $('#inGoals').innerHTML=Object.entries(G.L.goals).map(([k,n])=>k==='money'?`<li><img src="${ICON.money}" alt="">Have ₹${n.toLocaleString('en-IN')}</li>`:`<li><img src="${ICON[k]}" alt="">Collect ${n} ${plural(ITEMS[k].name.toLowerCase(),n)}</li>`).join('');
   $('#inTip').textContent=G.L.tip;
   $('#inStart').hidden=NET.role==='guest'; $('#inWait').hidden=NET.role!=='guest';
@@ -1360,7 +1373,8 @@ document.addEventListener('click',e=>{if(e.target.closest('.btn,.lvl,.icon-btn,.
 
 function showResult(){
   const i=G.li, m=medalFor(G.L,G.t), prev=SAVE.stars[i]||0;
-  const val=[0,10,20,30], coins=prev?Math.max(0,val[m]-val[prev])+10:val[m];
+  const val=[0,10,20,30]; let coins=prev?Math.max(0,val[m]-val[prev])+10:val[m];
+  if(G.L.hard) coins=Math.round(coins*1.5);
   SAVE.stars[i]=Math.max(prev,m); SAVE.coins+=coins; SAVE.unlocked=Math.max(SAVE.unlocked,Math.min(LEVELS.length,i+2)); persist();
   $('#rsName').textContent=G.L.name;
   const md=$('#rsMedal'); md.textContent=MEDAL_NAME[m]; md.style.background=MEDAL_VAR[m];
@@ -1516,8 +1530,8 @@ function applySnap(d){
   NET.up=d.up; UPV=d.up; G.money=d.m; G.t=d.gt; G.water=d.w; G.wellT=d.wt;
   for(let i=0;i<G.grass.length;i++) G.grass[i]=(d.g[i]||0)/20;
   G.animals=syncList(G.animals,d.a,([id,ty,x,y,dir,food,mv],o)=>Object.assign(o||{id,walk:Math.random()*5},{type:ty?'duck':'hen',tx:x,ty:y,dir,food:food/100,mv:!!mv}));
-  G.jackals=syncList(G.jackals,d.j,([id,x,y,dir,taps,stun,carry,mv],o)=>Object.assign(o||{id,walk:0,need:5},{tx:x,ty:y,dir,taps,stun,carry:carry||null,mv:!!mv}));
-  G.monkeys=syncList(G.monkeys,d.mk,([id,x,y,dir,taps,stun,item,mv,sc],o)=>Object.assign(o||{id,walk:0,need:3},{tx:x,ty:y,dir,taps,stun,item:item||null,mv:!!mv,state:sc?'scared':'seek'}));
+  G.jackals=syncList(G.jackals,d.j,([id,x,y,dir,taps,stun,carry,mv],o)=>Object.assign(o||{id,walk:0,need:G.hard?8:5},{tx:x,ty:y,dir,taps,stun,carry:carry||null,mv:!!mv}));
+  G.monkeys=syncList(G.monkeys,d.mk,([id,x,y,dir,taps,stun,item,mv,sc],o)=>Object.assign(o||{id,walk:0,need:G.hard?5:3},{tx:x,ty:y,dir,taps,stun,item:item||null,mv:!!mv,state:sc?'scared':'seek'}));
   G.trees=d.tr.map(([ty,slot,g,t])=>({type:ty?'banana':'palm',slot,x:TREE_SLOTS[slot].x,y:TREE_SLOTS[slot].y,g,t}));
   const pOld={}; G.products.forEach(p=>{pOld[p.id]=p;});
   G.products=d.p.map(([id,type,x,y,life,age])=>Object.assign(pOld[id]||{id,age},{type,x,y,life,max:life}));
@@ -1551,7 +1565,7 @@ function guestTick(dt){
 }
 function renderCoopBar(){
   const bar=$('#coopBar'); bar.hidden=!coop()&&!BOT.armed;
-  $('#coopText').textContent=NET.role==='host'?'Playing together. Your friend is connected: pick a level.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level.`:'';
+  $('#coopText').textContent=NET.role==='host'?'Playing together. Your friend is connected: pick a level. Co-op levels are much harder.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level. Co-op levels are much harder.`:'';
   $('#coopLeave').textContent=coop()?'Leave':'Play alone';
   $('#btnCoop').hidden=coop();
 }

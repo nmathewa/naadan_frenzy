@@ -7,10 +7,7 @@
   "compatibility_date": "2026-10-01",
 
   // The game engine is imported as the bare module "naadan-core" (see src/engine.js).
-  // This alias points it at the real engine in the repo root. To run against the
-  // mock engine instead, override on the command line:
-  //   wrangler dev --alias naadan-core:./test/mock-core.js
-  // (that is what `npm run dev:mock` and `npm test` do).
+  // This alias points it at the same core.js the browser game loads, in the repo root.
   "alias": {
     "naadan-core": "../core.js"
   },

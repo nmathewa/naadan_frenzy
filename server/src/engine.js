@@ -3,9 +3,7 @@
  *
  * core.js is a classic script that sets globalThis.NaadanCore when evaluated.
  * We pull it in with a side-effect import of the bare module "naadan-core",
- * which wrangler.jsonc aliases to the repo-root ../core.js. The mock engine is
- * selected with `--alias naadan-core:./test/mock-core.js` (npm run dev:mock /
- * npm test). Switching engines therefore never requires a code change here.
+ * which wrangler.jsonc aliases to the repo-root ../core.js.
  *
  * Note: the bundle is an ES module, so core.js runs in strict mode with
  * module scope: it must assign globalThis.NaadanCore explicitly and must not

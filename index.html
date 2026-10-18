@@ -383,17 +383,24 @@ const autoTrip=()=>UPG.auto.trip[UP().auto], wsMult=()=>UPG.ws.mult[UP().ws];
 // ---------- sound ----------
 // All audio is synthesised with Web Audio, so there are no sound files to load.
 // Custom sound files (published next to the page in sounds/). Moments without a file keep the synthesised sound.
-const CUSTOM_SFX={     // sound name -> file
+const CUSTOM_SFX={     // sound name -> file, or a list of files to pick from at random
+  win:['sounds/win-ithokke-enth.mp3'],
   fail:'sounds/fail.mp3',
   attack:'sounds/attack.mp3',  // a jackal grabs a bird or a monkey steals goods (no sound when they arrive)
 };
 const CUSTOM_MUSIC={}; // map / play / rush -> file, e.g. play:'sounds/music.mp3'
 const BUF={};
 function loadCustom(){
-  const all=[...Object.entries(CUSTOM_SFX).map(([k,u])=>['sfx:'+k,u]),...Object.entries(CUSTOM_MUSIC).map(([k,u])=>['music:'+k,u])];
-  all.forEach(([key,url])=>fetch(url).then(r=>{if(!r.ok) throw new Error(url); return r.arrayBuffer();}).then(b=>AC.decodeAudioData(b)).then(buf=>{BUF[key]=buf;}).catch(()=>{}));
+  const add=(key,url)=>fetch(url).then(r=>{if(!r.ok) throw new Error(url); return r.arrayBuffer();}).then(b=>AC.decodeAudioData(b)).then(buf=>{(BUF[key]=BUF[key]||[]).push(buf);}).catch(()=>{});
+  for(const [k,u] of Object.entries(CUSTOM_SFX)) [].concat(u).forEach(url=>add('sfx:'+k,url));
+  for(const [k,u] of Object.entries(CUSTOM_MUSIC)) [].concat(u).forEach(url=>add('music:'+k,url));
 }
-const CUSTOM_VOL={fail:.8,attack:.8};
+const lastPick={};
+function pickBuf(key){ // random clip from the list, never the same one twice in a row
+  const a=BUF[key]; if(!a||!a.length) return null; if(a.length===1) return a[0];
+  let b; do{b=a[Math.floor(Math.random()*a.length)];}while(b===lastPick[key]); return lastPick[key]=b;
+}
+const CUSTOM_VOL={fail:.8,attack:.8,win:.85};
 function playBuf(buf,dest,vol){const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=buf; g.gain.value=vol||1; s.connect(g); g.connect(dest); s.start(); return s;}
 let AC=null, MASTER=null, MUSIC=null, MUSBUS=null, SFXG=null, ECHO=null, NOISE=null;
 const MUSIC_VOL=.55, SFX_VOL=.9;
@@ -486,7 +493,7 @@ function sfx(n){playSfx(n); if(NET.role==='host'&&n!=='click') NET.ev.push({s:n}
 function playSfx(n){
   if(!SAVE.sfx) return; const a=audio(); if(!a) return; const t=a.currentTime+.01;
   if(lastSfx[n]!==undefined&&t-lastSfx[n]<(SFX_GAP[n]||0)) return; lastSfx[n]=t;
-  if(BUF['sfx:'+n]){playBuf(BUF['sfx:'+n],SFXG,CUSTOM_VOL[n]); return;}
+  const cb=pickBuf('sfx:'+n); if(cb){playBuf(cb,SFXG,CUSTOM_VOL[n]); return;}
   switch(n){
     case 'pop': osc('triangle',620,t,.09,.22,{f2:980}); break;
     case 'click': osc('triangle',900,t,.04,.08); break;
@@ -559,8 +566,7 @@ function playStep(M,step,t,spb){
 }
 function musicTick(){
   if(!AC||!MUS.mode||!SAVE.music||AC.state!=='running') return;
-  const cm=BUF['music:'+MUS.mode];
-  if(cm){if(MUS.buf!==cm){stopCustomMusic(); MUS.node=playBuf(cm,MUSBUS,.8); MUS.node.loop=true; MUS.buf=cm;} return;}
+  if(BUF['music:'+MUS.mode]){if(!MUS.node){MUS.node=playBuf(pickBuf('music:'+MUS.mode),MUSBUS,.8); MUS.node.loop=true; MUS.buf=MUS.node.buffer;} return;}
   const M=MODES[MUS.mode], spb=60/M.bpm/2;
   if(MUS.next<AC.currentTime-.3) MUS.next=AC.currentTime+.05;
   while(MUS.next<AC.currentTime+.25){playStep(M,MUS.step,MUS.next,spb); MUS.next+=spb; MUS.step=(MUS.step+1)%(16*SONG.length);}

@@ -1479,7 +1479,7 @@ function netErrorText(err){
   const t=err&&err.type;
   if(t==='peer-unavailable') return 'No farm found with that code. Check the code with your friend.';
   if(t==='browser-incompatible') return 'This browser cannot play co-op. Try Chrome, Safari or Firefox.';
-  return 'Could not reach the co-op server. Check your internet. Co-op only works on the public web version of the game, not inside Claude.';
+  return 'Could not connect. Check your internet and try again. Co-op only works on the public web version of the game, not inside Claude.';
 }
 function coopStatus(msg){$('#cpStatus').textContent=msg||'';}
 function openCoop(){
@@ -1487,47 +1487,125 @@ function openCoop(){
   if(!coop()&&NET.role!=='hosting') coopStatus('');
   show('#ovCoop');
 }
-async function hostGame(){
-  BOT.armed=false; renderCoopBar();
-  if(NET.role==='hosting'&&NET.peer&&NET.code){openCoop(); return;}
-  $('#coopMenu').hidden=true; $('#coopJoin').hidden=true; $('#coopHost').hidden=false; $('#cpCode').textContent='····';
-  coopStatus('Setting up your farm…');
-  try{await loadPeer();}catch(e){coopStatus(netErrorText()); return;}
-  const tryOpen=()=>{
-    const code=Array.from({length:4},()=>CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join('');
-    const peer=new Peer(PEER_PREFIX+code,{debug:0}); NET.peer=peer; NET.role='hosting';
-    peer.on('open',()=>{NET.code=code; $('#cpCode').textContent=code; coopStatus('Give this code to your friend. Waiting for them to join…');});
-    peer.on('error',err=>{if(err.type==='unavailable-id'){peer.destroy(); tryOpen();} else if(!coop()) coopStatus(netErrorText(err));});
-    peer.on('connection',conn=>{
-      if(coop()){conn.on('open',()=>conn.close()); return;}
-      conn.on('open',()=>{NET.conn=conn; NET.role='host'; wireConn(conn); conn.send({t:'hello'});
-        hide('#ovCoop'); renderCoopBar(); sfx('cash'); toast('Your friend joined. Pick a level to play together.');
-        if(G) NET.send({t:'start',li:G.li});});
+// Two routes: a direct peer-to-peer link (PeerJS/WebRTC), and a relay through a public MQTT broker
+// for networks where the phones can't link directly (mobile data, strict routers). The guest tries
+// direct first and switches to the relay after a few seconds; the host listens on both.
+const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},
+  {urls:['turn:eu-0.turn.peerjs.com:3478','turn:us-0.turn.peerjs.com:3478'],username:'peerjs',credential:'peerjsp'}]};
+const RELAY_BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const RELAY_ID=Math.random().toString(36).slice(2,10);
+const relayBase=code=>'naadan-frenzy-v1/'+code;
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('load')); document.head.appendChild(s);});}
+const loadMqtt=()=>window.mqtt?Promise.resolve():loadScript('https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js');
+function mqttConnect(){
+  return new Promise((res,rej)=>{
+    let i=0;
+    const next=()=>{
+      if(i>=RELAY_BROKERS.length){rej(new Error('relay')); return;}
+      const c=mqtt.connect(RELAY_BROKERS[i++],{clientId:'nf_'+RELAY_ID+'_'+Math.random().toString(36).slice(2,6),clean:true,connectTimeout:6000,reconnectPeriod:2000});
+      let done=false; const fail=()=>{if(done) return; done=true; try{c.end(true);}catch(e){} next();};
+      c.once('connect',()=>{if(done) return; done=true; res(c);}); c.once('error',fail); setTimeout(fail,7000);
+    };
+    next();
+  });
+}
+// A relay link that behaves like a PeerJS DataConnection: open, send(), close(), on('data'|'close').
+function RelayConn(client,pubTopic,peerId){
+  this.client=client; this.pub=pubTopic; this.peerId=peerId; this.open=true; this.h={}; this.last=Date.now();
+  this.hb=setInterval(()=>{this.raw({k:'ping'}); if(Date.now()-this.last>12000) this.close(true);},2000);
+}
+RelayConn.prototype.on=function(e,f){(this.h[e]=this.h[e]||[]).push(f); return this;};
+RelayConn.prototype.emit=function(e,a){(this.h[e]||[]).forEach(f=>f(a));};
+RelayConn.prototype.raw=function(o){if(this.open){try{this.client.publish(this.pub,JSON.stringify(Object.assign({from:RELAY_ID},o)));}catch(e){}}};
+RelayConn.prototype.send=function(d){this.raw({k:'d',d});};
+RelayConn.prototype.receive=function(m){this.last=Date.now(); if(m.k==='d') this.emit('data',m.d); else if(m.k==='bye') this.close(true);};
+RelayConn.prototype.close=function(remote){
+  if(!this.open) return; if(!remote) this.raw({k:'bye'});
+  this.open=false; clearInterval(this.hb); const c=this.client; setTimeout(()=>{try{c.end(true);}catch(e){}},200); this.emit('close');
+};
+function parseRelay(buf){try{return JSON.parse(buf.toString());}catch(e){return null;}}
+function relayHost(code){
+  return loadMqtt().then(mqttConnect).then(c=>{
+    if(NET.role!=='hosting'||NET.code!==code){c.end(true); return;}
+    NET.relay=c; const base=relayBase(code);
+    c.subscribe(base+'/h');
+    c.on('message',(topic,buf)=>{
+      const m=parseRelay(buf); if(!m||m.from===RELAY_ID) return;
+      if(m.k==='join'){
+        if(coop()||NET.role!=='hosting') return;
+        const conn=new RelayConn(c,base+'/g/'+m.from,m.from); NET.relayConn=conn; conn.raw({k:'welcome'}); onHostConnected(conn); return;
+      }
+      if(NET.relayConn&&m.from===NET.relayConn.peerId) NET.relayConn.receive(m);
     });
-  };
-  tryOpen();
+  });
+}
+function relayJoin(code){
+  return loadMqtt().then(mqttConnect).then(c=>new Promise((res,rej)=>{
+    const base=relayBase(code), mine=base+'/g/'+RELAY_ID; let conn=null;
+    c.on('message',(topic,buf)=>{
+      const m=parseRelay(buf); if(!m) return;
+      if(!conn&&m.k==='welcome'){conn=new RelayConn(c,base+'/h',m.from); res(conn); return;}
+      if(conn&&m.from===conn.peerId) conn.receive(m);
+    });
+    c.subscribe(mine,()=>c.publish(base+'/h',JSON.stringify({k:'join',from:RELAY_ID})));
+    setTimeout(()=>{if(!conn){try{c.end(true);}catch(e){} rej(new Error('nohost'));}},9000);
+  }));
+}
+function onHostConnected(conn){
+  NET.conn=conn; NET.role='host'; wireConn(conn); conn.send({t:'hello'});
+  hide('#ovCoop'); renderCoopBar(); sfx('cash'); toast('Your friend joined. Pick a level to play together.');
+  if(G) NET.send({t:'start',li:G.li});
+}
+async function hostGame(){
+  if(NET.role==='hosting'&&NET.code){openCoop(); return;}
+  BOT.armed=false; leaveCoop(true);
+  $('#coopMenu').hidden=true; $('#coopJoin').hidden=true; $('#coopHost').hidden=false;
+  const code=Array.from({length:4},()=>CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join('');
+  NET.role='hosting'; NET.code=code; $('#cpCode').textContent=code; renderCoopBar();
+  coopStatus('Tell your friend this code. You can close this panel; your farm stays open until they join.');
+  let relayOk=null, directOk=false;
+  relayHost(code).then(()=>{relayOk=true;}).catch(()=>{relayOk=false;});
+  loadPeer().then(()=>{
+    if(NET.role!=='hosting'||NET.code!==code) return;
+    const peer=new Peer(PEER_PREFIX+code,{debug:0,config:ICE}); NET.peer=peer;
+    peer.on('open',()=>{directOk=true;});
+    peer.on('disconnected',()=>{try{if(!peer.destroyed) peer.reconnect();}catch(e){}});
+    peer.on('error',()=>{});
+    peer.on('connection',conn=>conn.on('open',()=>{if(coop()||NET.role!=='hosting'){conn.close(); return;} onHostConnected(conn);}));
+  }).catch(()=>{});
+  setTimeout(()=>{if(NET.role==='hosting'&&NET.code===code&&relayOk===false&&!directOk) coopStatus(netErrorText());},9000);
 }
 async function joinGame(){
   BOT.armed=false;
   const code=$('#cpInput').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(code.length!==4){coopStatus('Enter the 4-letter room code from your friend.'); return;}
   coopStatus('Connecting…'); $('#cpJoin').disabled=true;
-  try{await loadPeer();}catch(e){coopStatus(netErrorText()); $('#cpJoin').disabled=false; return;}
   leaveCoop(true);
-  const peer=new Peer(undefined,{debug:0}); NET.peer=peer;
-  peer.on('open',()=>{
-    const conn=peer.connect(PEER_PREFIX+code,{reliable:true});
-    const to=setTimeout(()=>{if(!conn.open){coopStatus('No farm found with that code. Check the code with your friend.'); $('#cpJoin').disabled=false;}},12000);
-    conn.on('open',()=>{clearTimeout(to); NET.conn=conn; NET.role='guest'; wireConn(conn); $('#cpJoin').disabled=false;
-      hide('#ovCoop'); renderCoopBar(); renderMap(); sfx('cash'); toast('Connected. Your friend picks the level.');});
-  });
-  peer.on('error',err=>{if(!coop()){coopStatus(netErrorText(err)); $('#cpJoin').disabled=false;}});
+  let done=false;
+  const ok=conn=>{
+    if(done){try{conn.close();}catch(e){} return;}
+    done=true; NET.conn=conn; NET.role='guest'; wireConn(conn); $('#cpJoin').disabled=false;
+    hide('#ovCoop'); renderCoopBar(); renderMap(); sfx('cash'); toast('Connected. Your friend picks the level.');
+  };
+  loadPeer().then(()=>{
+    const peer=new Peer(undefined,{debug:0,config:ICE}); NET.peer=peer; peer.on('error',()=>{});
+    peer.on('open',()=>{const conn=peer.connect(PEER_PREFIX+code,{reliable:true}); conn.on('open',()=>ok(conn));});
+  }).catch(()=>{});
+  setTimeout(()=>{
+    if(done) return;
+    coopStatus('Still connecting… trying another route.');
+    relayJoin(code).then(ok).catch(err=>{
+      if(done) return; $('#cpJoin').disabled=false;
+      coopStatus(err.message==='nohost'?`No farm found with code ${code}. Check the code, and ask your friend to keep the game open on their phone.`:netErrorText());
+    });
+  },4000);
 }
 function wireConn(conn){conn.on('data',onNet); conn.on('close',onNetClose); conn.on('error',onNetClose);}
 function leaveCoop(quiet){
   if(NET.conn){NET.send({t:'bye'}); try{NET.conn.close();}catch(e){}}
   if(NET.peer){try{NET.peer.destroy();}catch(e){}}
-  NET.role=null; NET.conn=null; NET.peer=null; NET.up=null; NET.ev=[];
+  if(NET.relay){const c=NET.relay; setTimeout(()=>{try{c.end(true);}catch(e){}},200);}
+  NET.role=null; NET.conn=null; NET.peer=null; NET.relay=null; NET.relayConn=null; NET.code=''; NET.up=null; NET.ev=[];
   if(!quiet){renderCoopBar(); renderMap();}
 }
 function onNetClose(){
@@ -1610,9 +1688,9 @@ function guestTick(dt){
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
 }
 function renderCoopBar(){
-  const bar=$('#coopBar'); bar.hidden=!coop()&&!BOT.armed;
-  $('#coopText').textContent=NET.role==='host'?'Playing together. Your friend is connected: pick a level. Co-op levels are much harder.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level. Co-op levels are much harder.`:'';
-  $('#coopLeave').textContent=coop()?'Leave':'Play alone';
+  const bar=$('#coopBar'); bar.hidden=!coop()&&!BOT.armed&&NET.role!=='hosting';
+  $('#coopText').textContent=NET.role==='host'?'Playing together. Your friend is connected: pick a level. Co-op levels are much harder.':NET.role==='guest'?'Playing together. Waiting for your friend to pick a level.':NET.role==='hosting'?`Your room code is ${NET.code}. Waiting for your friend to join…`:BOT.armed?`Farming with Kuttan (${BOT_SKILL[BOT.skill].name}). Pick a level. Co-op levels are much harder.`:'';
+  $('#coopLeave').textContent=coop()?'Leave':NET.role==='hosting'?'Cancel':'Play alone';
   $('#btnCoop').hidden=coop();
 }
 $('#btnCoop').onclick=()=>openCoop();
@@ -1620,8 +1698,8 @@ $('#cpHost').onclick=()=>hostGame();
 $('#cpJoinOpen').onclick=()=>{$('#coopMenu').hidden=true; $('#coopJoin').hidden=false; coopStatus(''); $('#cpInput').focus();};
 $('#cpJoin').onclick=()=>joinGame();
 $('#cpInput').addEventListener('keydown',e=>{if(e.key==='Enter') joinGame();});
-$('#cpClose').onclick=()=>{if(NET.role==='hosting') leaveCoop(); hide('#ovCoop');};
-$('#coopLeave').onclick=()=>{if(coop()) leaveCoop(); else{BOT.armed=false; BOT.on=false; renderCoopBar();}};
+$('#cpClose').onclick=()=>hide('#ovCoop');
+$('#coopLeave').onclick=()=>{if(coop()||NET.role==='hosting') leaveCoop(); else{BOT.armed=false; BOT.on=false; renderCoopBar();}};
 $('#psLeave').onclick=()=>{if(coop()){leaveCoop(); goMap();} else{BOT.armed=false; BOT.on=false; hide('#ovPause'); toast('Kuttan went home. You are farming alone now.');}};
 $('#rsLeave').onclick=()=>{leaveCoop(); goMap();};
 
@@ -1731,7 +1809,7 @@ function frame(ts){
     else if(G.state==='play'&&(NET.role==='host'||!isPaused())) update(dt);
     else if(G.state==='won'||G.state==='failed'){G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d); G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);}
     if(G.state==='won'||G.state==='failed'){G.wonT+=dt; if(G.wonT>1.2&&$('#ovResult').hidden){if(G.state==='won'){G.state='done'; showResult();} else{G.state='over'; showFail();}}}
-    if(NET.role==='host'){NET.acc+=dt; if(NET.acc>=1/12){NET.acc=0; NET.send(snap());}}
+    if(NET.role==='host'){NET.acc+=dt; if(NET.acc>=(NET.conn instanceof RelayConn?1/8:1/12)){NET.acc=0; NET.send(snap());}}
     if(!$('#ovMarket').hidden){const sg=marketSig(); if(sg!==NET.mkSig){NET.mkSig=sg; renderMarket();}}
   }
   if(AC&&MUS.mode){const duck=G&&G.state==='play'&&isPaused()?.35:1; if(duck!==MUS.duck){MUS.duck=duck; MUSBUS.gain.setTargetAtTime(duck,AC.currentTime,.2);}}

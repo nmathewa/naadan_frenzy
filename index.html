@@ -111,6 +111,9 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .coop-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 20px 8px;padding:8px 8px 8px 14px;border-radius:12px;background:rgba(43,124,134,.35);box-shadow:inset 0 0 0 1.5px var(--kasavu);font-size:14px;font-weight:600;line-height:1.3}
 .code{font-size:44px;font-weight:800;letter-spacing:.25em;text-align:center;color:var(--laterite);font-variant-numeric:tabular-nums;padding-left:.25em}
 .join-row{display:flex;gap:8px}
+.cp-details{margin-top:8px;font-size:12px;color:var(--ink-soft)}
+.cp-details summary{cursor:pointer;font-weight:700}
+.cp-details ol{margin:6px 0 0;padding-left:18px;display:grid;gap:2px;-webkit-user-select:text;user-select:text}
 .seg{display:flex;gap:6px}
 .hard-note{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:var(--laterite);color:var(--cream);font-weight:700;font-size:14px;line-height:1.35}
 .segb{flex:1;min-height:42px;border:0;border-radius:10px;background:rgba(58,36,20,.08);color:var(--ink);font-weight:700;font-size:15px;box-shadow:inset 0 0 0 2px rgba(107,79,55,.35)}
@@ -196,7 +199,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
       <div class="map-sound"><button class="chip" id="mapMusic" aria-pressed="true">Music on</button><button class="chip" id="mapSfx" aria-pressed="true">Sound effects on</button></div>
       <div id="levels"></div>
       <div class="map-foot">
-        <span>Progress saves in this browser.</span>
+        <span>Progress saves in this browser · <span id="appVer"></span></span>
         <button class="linkish" id="btnReset">Reset progress</button>
       </div>
     </div>
@@ -293,6 +296,7 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
           <div class="join-row"><input id="cpInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn" id="cpJoin">Join</button></div>
         </div>
         <p class="note" id="cpStatus" role="status"></p>
+        <details class="cp-details"><summary>Connection details</summary><ol id="cpLog"></ol></details>
         <button class="btn ghost wide" id="cpClose">Close</button>
       </div>
     </div>
@@ -428,6 +432,7 @@ const REGIONS={1:'Region 1 · Kuttanad backwaters',2:'Region 2 · Idukki high ra
 const regionOf=i=>LEVELS[i].region||1;
 
 // ---------- save ----------
+const APP_VERSION='v19';
 const SKEY='naadan-frenzy-save-v1';
 const UNLOCK_ALL=true; // testing: every level is playable. Set to false to restore normal unlocking.
 function defSave(){return{unlocked:1,stars:{},coins:0,up:{well:0,store:0,auto:0,ws:0},music:true,sfx:true}}
@@ -1978,7 +1983,7 @@ cv.addEventListener('pointerdown',e=>{torchAt(e); const r=cv.getBoundingClientRe
 // ---------- co-op (two phones, one farm) ----------
 // The host runs the simulation; the guest sends its taps and shows the host's state, sent about 12 times a second.
 const PEER_PREFIX='naadan-frenzy-coop-', CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const NET={role:null,peer:null,conn:null,acc:0,ev:[],up:null,code:'',mkSig:'',
+const NET={log:[],relays:[],role:null,peer:null,conn:null,acc:0,ev:[],up:null,code:'',mkSig:'',
   send(m){if(this.conn&&this.conn.open){try{this.conn.send(m);}catch(e){}}}};
 const coop=()=>NET.role==='host'||NET.role==='guest';
 const r1=v=>Math.round(v*10)/10;
@@ -2003,22 +2008,25 @@ function openCoop(){
 // direct first and switches to the relay after a few seconds; the host listens on both.
 const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},
   {urls:['turn:eu-0.turn.peerjs.com:3478','turn:us-0.turn.peerjs.com:3478'],username:'peerjs',credential:'peerjsp'}]};
-const RELAY_BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const RELAY_BROKERS=[
+  {name:'EMQX',url:'wss://broker.emqx.io:8084/mqtt'},
+  {name:'HiveMQ',url:'wss://broker.hivemq.com:8884/mqtt'},
+  {name:'Mosquitto',url:'wss://test.mosquitto.org:8081/mqtt'},
+];
 const RELAY_ID=Math.random().toString(36).slice(2,10);
 const relayBase=code=>'naadan-frenzy-v1/'+code;
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script'); s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('load')); document.head.appendChild(s);});}
 const loadMqtt=()=>window.mqtt?Promise.resolve():loadScript('https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js');
-function mqttConnect(){
-  return new Promise((res,rej)=>{
-    let i=0;
-    const next=()=>{
-      if(i>=RELAY_BROKERS.length){rej(new Error('relay')); return;}
-      const c=mqtt.connect(RELAY_BROKERS[i++],{clientId:'nf_'+RELAY_ID+'_'+Math.random().toString(36).slice(2,6),clean:true,connectTimeout:6000,reconnectPeriod:2000});
-      let done=false; const fail=()=>{if(done) return; done=true; try{c.end(true);}catch(e){} next();};
-      c.once('connect',()=>{if(done) return; done=true; res(c);}); c.once('error',fail); setTimeout(fail,7000);
-    };
-    next();
-  });
+// Step-by-step log shown under "Connection details" in the co-op panel.
+function netLog(msg){NET.log.push(msg); const ol=$('#cpLog'); if(ol) ol.innerHTML=NET.log.map(m=>`<li>${m.replace(/</g,'&lt;')}</li>`).join('');}
+// Connect to every relay broker at once; both phones then meet on whichever brokers they share.
+function mqttConnectAll(){
+  return Promise.all(RELAY_BROKERS.map(b=>new Promise(res=>{
+    let c; try{c=mqtt.connect(b.url,{clientId:'nf_'+RELAY_ID+'_'+Math.random().toString(36).slice(2,6),clean:true,connectTimeout:7000,reconnectPeriod:2000});}
+    catch(e){netLog(`Relay ${b.name}: could not start`); res(null); return;}
+    let done=false; const fin=ok=>{if(done) return; done=true; netLog(`Relay ${b.name}: ${ok?'connected':'not reachable'}`); if(!ok){try{c.end(true);}catch(e){}} res(ok?Object.assign(c,{brokerName:b.name}):null);};
+    c.once('connect',()=>fin(true)); c.once('error',()=>fin(false)); setTimeout(()=>fin(false),8000);
+  }))).then(list=>list.filter(Boolean));
 }
 // A relay link that behaves like a PeerJS DataConnection: open, send(), close(), on('data'|'close').
 function RelayConn(client,pubTopic,peerId){
@@ -2036,30 +2044,40 @@ RelayConn.prototype.close=function(remote){
 };
 function parseRelay(buf){try{return JSON.parse(buf.toString());}catch(e){return null;}}
 function relayHost(code){
-  return loadMqtt().then(mqttConnect).then(c=>{
-    if(NET.role!=='hosting'||NET.code!==code){c.end(true); return;}
-    NET.relay=c; const base=relayBase(code);
-    c.subscribe(base+'/h');
-    c.on('message',(topic,buf)=>{
-      const m=parseRelay(buf); if(!m||m.from===RELAY_ID) return;
-      if(m.k==='join'){
-        if(coop()||NET.role!=='hosting') return;
-        const conn=new RelayConn(c,base+'/g/'+m.from,m.from); NET.relayConn=conn; conn.raw({k:'welcome'}); onHostConnected(conn); return;
-      }
-      if(NET.relayConn&&m.from===NET.relayConn.peerId) NET.relayConn.receive(m);
+  return loadMqtt().catch(e=>{netLog('Relay: could not load the relay library'); throw e;}).then(mqttConnectAll).then(clients=>{
+    if(NET.role!=='hosting'||NET.code!==code){clients.forEach(c=>c.end(true)); return;}
+    if(!clients.length){netLog('Relay: no relay server reachable from this phone'); throw new Error('relay');}
+    NET.relays=clients; const base=relayBase(code);
+    clients.forEach(c=>{
+      c.subscribe(base+'/h');
+      c.on('message',(topic,buf)=>{
+        const m=parseRelay(buf); if(!m||m.from===RELAY_ID) return;
+        if(m.k==='join'){
+          if(coop()||NET.role!=='hosting') return;
+          netLog(`Friend found via relay ${c.brokerName}`);
+          const conn=new RelayConn(c,base+'/g/'+m.from,m.from); NET.relayConn=conn; conn.raw({k:'welcome'}); onHostConnected(conn); return;
+        }
+        if(NET.relayConn&&NET.relayConn.client===c&&m.from===NET.relayConn.peerId) NET.relayConn.receive(m);
+      });
     });
+    netLog(`Waiting for your friend on ${clients.length} relay server${clients.length>1?'s':''}…`);
   });
 }
 function relayJoin(code){
-  return loadMqtt().then(mqttConnect).then(c=>new Promise((res,rej)=>{
+  return loadMqtt().catch(e=>{netLog('Relay: could not load the relay library'); throw e;}).then(mqttConnectAll).then(clients=>new Promise((res,rej)=>{
+    if(!clients.length){netLog('Relay: no relay server reachable from this phone'); rej(new Error('relay')); return;}
     const base=relayBase(code), mine=base+'/g/'+RELAY_ID; let conn=null;
-    c.on('message',(topic,buf)=>{
-      const m=parseRelay(buf); if(!m) return;
-      if(!conn&&m.k==='welcome'){conn=new RelayConn(c,base+'/h',m.from); res(conn); return;}
-      if(conn&&m.from===conn.peerId) conn.receive(m);
+    clients.forEach(c=>{
+      c.on('message',(topic,buf)=>{
+        const m=parseRelay(buf); if(!m) return;
+        if(!conn&&m.k==='welcome'){conn=new RelayConn(c,base+'/h',m.from); netLog(`Farm answered via relay ${c.brokerName}`);
+          clients.forEach(o=>{if(o!==c){try{o.end(true);}catch(e){}}}); res(conn); return;}
+        if(conn&&conn.client===c&&m.from===conn.peerId) conn.receive(m);
+      });
+      c.subscribe(mine,()=>c.publish(base+'/h',JSON.stringify({k:'join',from:RELAY_ID})));
     });
-    c.subscribe(mine,()=>c.publish(base+'/h',JSON.stringify({k:'join',from:RELAY_ID})));
-    setTimeout(()=>{if(!conn){try{c.end(true);}catch(e){} rej(new Error('nohost'));}},9000);
+    netLog(`Relay: asked farm ${code} to answer on ${clients.length} server${clients.length>1?'s':''}…`);
+    setTimeout(()=>{if(!conn){clients.forEach(c=>{try{c.end(true);}catch(e){}}); netLog('Relay: no answer from that farm'); rej(new Error('nohost'));}},10000);
   }));
 }
 function onHostConnected(conn){
@@ -2072,17 +2090,18 @@ async function hostGame(){
   BOT.armed=false; leaveCoop(true);
   $('#coopMenu').hidden=true; $('#coopJoin').hidden=true; $('#coopHost').hidden=false;
   const code=Array.from({length:4},()=>CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join('');
-  NET.role='hosting'; NET.code=code; $('#cpCode').textContent=code; renderCoopBar();
+  NET.role='hosting'; NET.code=code; NET.log=[]; netLog(`Version ${APP_VERSION} · room code ${code}`); $('#cpCode').textContent=code; renderCoopBar();
   coopStatus('Tell your friend this code. You can close this panel; your farm stays open until they join.');
   let relayOk=null, directOk=false;
   relayHost(code).then(()=>{relayOk=true;}).catch(()=>{relayOk=false;});
   loadPeer().then(()=>{
     if(NET.role!=='hosting'||NET.code!==code) return;
+    netLog('Direct link: connecting to server…');
     const peer=new Peer(PEER_PREFIX+code,{debug:0,config:ICE}); NET.peer=peer;
-    peer.on('open',()=>{directOk=true;});
+    peer.on('open',()=>{directOk=true; netLog('Direct link: server connected');});
     peer.on('disconnected',()=>{try{if(!peer.destroyed) peer.reconnect();}catch(e){}});
-    peer.on('error',()=>{});
-    peer.on('connection',conn=>conn.on('open',()=>{if(coop()||NET.role!=='hosting'){conn.close(); return;} onHostConnected(conn);}));
+    peer.on('error',err=>netLog(`Direct link: error (${err&&err.type||'unknown'})`));
+    peer.on('connection',conn=>conn.on('open',()=>{netLog('Friend connected directly');if(coop()||NET.role!=='hosting'){conn.close(); return;} onHostConnected(conn);}));
   }).catch(()=>{});
   setTimeout(()=>{if(NET.role==='hosting'&&NET.code===code&&relayOk===false&&!directOk) coopStatus(netErrorText());},9000);
 }
@@ -2091,7 +2110,7 @@ async function joinGame(){
   const code=$('#cpInput').value.toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(code.length!==4){coopStatus('Enter the 4-letter room code from your friend.'); return;}
   coopStatus('Connecting…'); $('#cpJoin').disabled=true;
-  leaveCoop(true);
+  leaveCoop(true); NET.log=[]; netLog(`Version ${APP_VERSION} · joining ${code}`);
   let done=false;
   const ok=conn=>{
     if(done){try{conn.close();}catch(e){} return;}
@@ -2099,11 +2118,13 @@ async function joinGame(){
     hide('#ovCoop'); renderCoopBar(); renderMap(); sfx('cash'); toast('Connected. Your friend picks the level.');
   };
   loadPeer().then(()=>{
-    const peer=new Peer(undefined,{debug:0,config:ICE}); NET.peer=peer; peer.on('error',()=>{});
-    peer.on('open',()=>{const conn=peer.connect(PEER_PREFIX+code,{reliable:true}); conn.on('open',()=>ok(conn));});
-  }).catch(()=>{});
+    netLog('Direct link: connecting to server…');
+    const peer=new Peer(undefined,{debug:0,config:ICE}); NET.peer=peer;
+    peer.on('error',err=>netLog(err&&err.type==='peer-unavailable'?'Direct link: farm not found on the server':`Direct link: error (${err&&err.type||'unknown'})`));
+    peer.on('open',()=>{netLog(`Direct link: server connected, calling farm ${code}…`); const conn=peer.connect(PEER_PREFIX+code,{reliable:true}); conn.on('open',()=>{netLog('Connected directly'); ok(conn);});});
+  }).catch(()=>netLog('Direct link: could not load the library'));
   setTimeout(()=>{
-    if(done) return;
+    if(done) return; netLog('Direct link did not connect in 4s, trying the relay');
     coopStatus('Still connecting… trying another route.');
     relayJoin(code).then(ok).catch(err=>{
       if(done) return; $('#cpJoin').disabled=false;
@@ -2115,8 +2136,8 @@ function wireConn(conn){conn.on('data',onNet); conn.on('close',onNetClose); conn
 function leaveCoop(quiet){
   if(NET.conn){NET.send({t:'bye'}); try{NET.conn.close();}catch(e){}}
   if(NET.peer){try{NET.peer.destroy();}catch(e){}}
-  if(NET.relay){const c=NET.relay; setTimeout(()=>{try{c.end(true);}catch(e){}},200);}
-  NET.role=null; NET.conn=null; NET.peer=null; NET.relay=null; NET.relayConn=null; NET.code=''; NET.up=null; NET.ev=[];
+  (NET.relays||[]).forEach(c=>setTimeout(()=>{try{c.end(true);}catch(e){}},200));
+  NET.role=null; NET.conn=null; NET.peer=null; NET.relays=[]; NET.relayConn=null; NET.code=''; NET.up=null; NET.ev=[];
   if(!quiet){renderCoopBar(); renderMap();}
 }
 function onNetClose(){
@@ -2157,7 +2178,7 @@ function snap(){
     b:G.boats.map(b=>[b.id,r1(b.t),b.dur,b.cargo,b.spawned?1:0]),
     el:G.elephants.map(e=>[e.id,r1(e.x),r1(e.y),e.dir,e.pts,e.need,e.state==='flee'?1:0]),
     ws:G.ws.map(w=>w&&[w.built?1:0,w.busy?1:0,r1(w.t),r1(w.dur),w.queue,r1(w.broken||0)]),
-    ev:G.ev?[EVENT_KEYS.indexOf(G.ev.type),r1(G.ev.t),G.ev.dur,r1(G.ev.x||0),r1(G.ev.y||0),G.ev.hit?1:0]:0,
+    ce:G.ev?[EVENT_KEYS.indexOf(G.ev.type),r1(G.ev.t),G.ev.dur,r1(G.ev.x||0),r1(G.ev.y||0),G.ev.hit?1:0]:0,
     tk:[T.state==='home'?0:1,r1(T.t),T.cargo,T.sold?1:0],
     s:G.store,co:G.collected,fr:G.failReason||'',ev:NET.ev.splice(0)};
 }
@@ -2181,7 +2202,7 @@ function applySnap(d){
   G.boats=d.b.map(([id,t,dur,cargo,sp])=>Object.assign(bOld[id]||{id},{t,dur,cargo,spawned:!!sp}));
   d.ws.forEach((r,i)=>{const w=G.ws[i]; if(w&&r){w.built=!!r[0]; w.busy=!!r[1]; w.t=r[2]; w.dur=r[3]; w.queue=r[4]; w.broken=r[5]||0;}});
   G.elephants=syncList(G.elephants,d.el||[],([id,x,y,dir,pts,need,fl],o)=>Object.assign(o||{id,walk:0},{tx:x,ty:y,dir,pts,need,state:fl?'flee':'raid',mv:true}));
-  G.ev=d.ev?{type:EVENT_KEYS[d.ev[0]],t:d.ev[1],dur:d.ev[2],x:d.ev[3],y:d.ev[4],hit:!!d.ev[5]}:null;
+  G.ev=d.ce?{type:EVENT_KEYS[d.ce[0]],t:d.ce[1],dur:d.ce[2],x:d.ce[3],y:d.ce[4],hit:!!d.ce[5]}:null;
   const T=G.truck; T.state=d.tk[0]?'going':'home'; T.t=d.tk[1]; T.cargo=d.tk[2]; T.sold=!!d.tk[3];
   G.store=d.s; G.collected=d.co;
   if(G.state==='intro'&&d.st==='play'){hide('#ovIntro'); G.state='play';}
@@ -2346,6 +2367,7 @@ function frame(ts){
   render(); renderHUD();
   requestAnimationFrame(frame);
 }
+$('#appVer').textContent=APP_VERSION;
 buildIcons(); renderMap(); syncSoundUI(); fit();
 window.addEventListener('resize',fit);
 if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{fit(); buildIcons(); renderMap();});

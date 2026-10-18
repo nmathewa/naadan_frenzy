@@ -1,0 +1,17 @@
+{
+  "name": "naadan-frenzy-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authoritative multiplayer server for Naadan Frenzy (Cloudflare Workers + Durable Objects)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --local",
+    "dev:test": "wrangler dev --port 8787 --local --var GRACE_MS:3000",
+    "deploy": "wrangler deploy",
+    "test": "node test/clients.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.1",
+    "ws": "8.22.0"
+  }
+}

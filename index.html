@@ -35,7 +35,12 @@ button:focus-visible{outline:3px solid var(--kasavu);outline-offset:2px}
 .hud-top{display:flex;align-items:center;gap:8px}
 .icon-btn{width:40px;height:40px;flex:none;border-radius:8px;border:0;background:rgba(247,239,218,.15);color:var(--cream);font-weight:800;font-size:13px;letter-spacing:1px}
 #lvlName{flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#money{font-weight:800;font-size:17px;color:#ffe39a;font-variant-numeric:tabular-nums}
+#money{font-weight:800;font-size:17px;color:#ffe39a;font-variant-numeric:tabular-nums;display:inline-block;transform-origin:50% 60%}
+#money.up{animation:mUp .5s ease-out}
+#money.down{animation:mDown .45s ease-out}
+@keyframes mUp{0%{transform:scale(1)}30%{transform:scale(1.22);color:#b9f59a}100%{transform:scale(1)}}
+@keyframes mDown{0%{transform:scale(1)}30%{transform:scale(.9);color:#ffab8f}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){#money.up,#money.down{animation:none}}
 #timer.low{background:#a9472b;color:#fff}
 #timer.night{background:#24356e;color:#fff}
 .tool-btn{width:auto;padding:0 10px;background:#7a5a2a}
@@ -355,7 +360,7 @@ const bg=document.createElement('canvas'), bctx=bg.getContext('2d');
 let S=1, DPR=1;
 
 // ---------- save ----------
-const APP_VERSION='v25';
+const APP_VERSION='v26';
 // The online game server (Cloudflare). Empty: fall back to the old phone-to-phone link. ?server=<url> overrides it.
 const DEFAULT_SERVER='https://naadan-frenzy-server.nmanirmal.workers.dev';
 const SERVER_URL=(()=>{try{const q=new URLSearchParams(location.search).get('server'); if(q) return q;}catch(e){} return DEFAULT_SERVER;})();
@@ -390,7 +395,7 @@ function fx(k,x,y,extra){if(G) G.fx.push(Object.assign({k,x,y,t:0,d:k==='fly'?.5
 function floatText(text,x,y,color){if(G) G.floats.push({text,x,y,t:0,color:color||'#fff6d8'});}
 // effects, vehicle and boat sounds: run on every phone, whoever runs the farm
 function screenTick(dt){
-  G.fx.forEach(f=>f.t+=dt); G.fx=G.fx.filter(f=>f.t<f.d);
+  G.fx.forEach(f=>{f.t+=dt; if(f.k==='fly'&&f.t>=f.d) FEEL.bump[f.tx===WH.x?'store':f.tx===PARK.x?'auto':'ws'+Math.round(f.tx)]=now;}); G.fx=G.fx.filter(f=>f.t<f.d);
   G.floats.forEach(f=>f.t+=dt); G.floats=G.floats.filter(f=>f.t<1.4);
   if(G.state!=='play'||(NET.role!=='guest'&&isPaused())) return;
   const T=G.truck; if(T.state==='going') truckPulse(T,T.t/autoTrip(),dt);
@@ -918,11 +923,14 @@ function drawKB(g,cx,by,w,o){
   }
 }
 const kbCache={};
-function drawKBCached(g,key,cx,by,w,o){
+function drawKBCached(g,key,cx,by,w,o,sx,sy){
   const k=S*DPR, pad=16, top=(o.h||48)+(o.roofH||26)+40; let c=kbCache[key];
   if(!c){c=kbCache[key]=document.createElement('canvas'); c.width=Math.ceil((w+2*pad)*k); c.height=Math.ceil((top+10)*k);
     const cg=c.getContext('2d'); cg.setTransform(k,0,0,k,(w/2+pad)*k,top*k); drawKB(cg,0,0,w,o);}
-  g.setTransform(1,0,0,1,0,0); g.drawImage(c,Math.round((cx-w/2-pad)*k),Math.round((by-top)*k)); g.setTransform(k,0,0,k,0,0);
+  g.setTransform(1,0,0,1,0,0);
+  if(sx&&(sx!==1||sy!==1)) g.drawImage(c,(cx-(w/2+pad)*sx)*k,(by-top*sy)*k,c.width*sx,c.height*sy);
+  else g.drawImage(c,Math.round((cx-w/2-pad)*k),Math.round((by-top)*k));
+  g.setTransform(k,0,0,k,0,0);
 }
 const WS_EXTRA_R2={
   meat:(g,cx,by,w,wt)=>{for(let x=cx-w/2;x<cx+w/2;x+=8){g.fillStyle=((x-cx)/8|0)%2?'#c8352c':'#fbf3ee'; g.fillRect(x,wt+18,Math.min(8,cx+w/2-x),5);}
@@ -1033,7 +1041,21 @@ function drawBG(g){
   for(let x=-10;x<W+20;x+=24){for(let k=0;k<3;k++){g.fillStyle=['#22492a','#2c5f30','#3a7838'][k]; ell(g,x+R()*10,12+k*5+R()*4,18-k*3,8-k*2,R()-.5); g.fill();}}
   // field soil
   g.fillStyle='#c9a26a'; rr(g,FX-6,FY-6,FW+12,FH+12,12); g.fill();
+  g.save(); rr(g,FX-6,FY-6,FW+12,FH+12,12); g.clip();
+  for(let y=FY-2;y<FY+FH+8;y+=10){ // gentle ploughed furrows
+    g.strokeStyle='rgba(140,95,50,.16)'; g.lineWidth=3; g.beginPath(); g.moveTo(FX-6,y); for(let x=FX;x<=FX+FW+12;x+=12) g.lineTo(x,y+Math.sin(x*.045+y*.3)*1.3); g.stroke();
+    g.strokeStyle='rgba(255,242,210,.14)'; g.lineWidth=1.2; g.beginPath(); g.moveTo(FX-6,y+3); for(let x=FX;x<=FX+FW+12;x+=12) g.lineTo(x,y+3+Math.sin(x*.045+y*.3)*1.3); g.stroke();}
   for(let i=0;i<260;i++){g.fillStyle=R()<.5?'rgba(120,80,40,.18)':'rgba(255,240,200,.15)'; ell(g,FX+R()*FW,FY+R()*FH,1+R()*1.6,.8+R()); g.fill();}
+  for(let i=0;i<34;i++){const x=FX+R()*FW, y=FY+R()*FH, r=1.2+R()*1.8; g.fillStyle='rgba(110,90,70,.35)'; ell(g,x,y+.6,r,r*.7); g.fill(); g.fillStyle='rgba(235,225,205,.55)'; ell(g,x-.3,y-.2,r*.7,r*.45); g.fill();}
+  g.strokeStyle='rgba(95,62,30,.16)'; g.lineWidth=16; rr(g,FX-6,FY-6,FW+12,FH+12,12); g.stroke();
+  g.strokeStyle='rgba(95,62,30,.14)'; g.lineWidth=6; rr(g,FX-6,FY-6,FW+12,FH+12,12); g.stroke();
+  g.restore();
+  // grass tufts along the outside of the field
+  g.lineCap='round'; g.lineWidth=1.3;
+  for(let i=0;i<120;i++){const side=i%4, u=R(); let x,y;
+    if(side===0){x=FX-6+u*(FW+12); y=FY-10-R()*3;} else if(side===1){x=FX-6+u*(FW+12); y=FY+FH+11+R()*2;}
+    else if(side===2){x=FX-11-R()*5; y=FY+u*FH;} else{x=FX+FW+11+R()*5; y=FY+u*FH;}
+    g.strokeStyle=R()<.5?'#3f7d2e':'#7fbf55'; g.beginPath(); for(let b=-1;b<=1;b++){g.moveTo(x+b*2,y); g.lineTo(x+b*3.2,y-4-R()*3);} g.stroke();}
   // fence
   g.strokeStyle='#a77b48'; g.lineWidth=2; g.beginPath();
   const fx0=FX-7, fx1=FX+FW+7, fy0=FY-7, fy1=FY+FH+7;
@@ -1064,13 +1086,68 @@ function drawBG(g){
 // grass atlas: 15 blade patterns (cell index mod 15) x 16 growth levels, rebuilt by fit()
 const GL=16, GP=15, GB=36; const ga=document.createElement('canvas'), gactx=ga.getContext('2d'); let gaPx=1;
 function buildGrassAtlas(k){
-  gaPx=Math.ceil(GB*k); ga.width=gaPx*GP; ga.height=gaPx*GL; const g=gactx;
-  for(let p=0;p<GP;p++) for(let l=1;l<=GL;l++){const v=l/GL;
-    g.setTransform(k,0,0,k,p*gaPx+GB/2*k,(l-1)*gaPx+GB/2*k);
-    g.fillStyle=`rgba(92,160,58,${.35+.55*v})`; rr(g,-CELL/2-1,-CELL/2-1,CELL+2,CELL+2,9); g.fill();
-    if(v<.25) continue; const hgt=3+6*v; g.strokeStyle='#3c7f2e'; g.lineWidth=1.3; g.lineCap='round'; g.beginPath();
-    for(let q=0;q<3;q++){const bx=-8+q*8+((p*7+q*3)%5), by=((p*3+q*5)%9)-3; g.moveTo(bx,by); g.lineTo(bx-1.5,by-hgt); g.moveTo(bx,by); g.lineTo(bx+2,by-hgt*.8);}
-    g.stroke();}
+  gaPx=Math.ceil(GB*k); ga.width=gaPx*GP; ga.height=gaPx*GL; const g=gactx; g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,ga.width,ga.height);
+  for(let p=0;p<GP;p++){
+    const R=mulberry(100+p);
+    const edge=Array.from({length:12},(_,i)=>{const a=i/12*Math.PI*2; return [Math.cos(a),Math.sin(a),.75+R()*.5];});
+    const blades=Array.from({length:11},()=>[R()*22-11,R()*16-5,.6+R()*.5,R()*2-1,R()<.35]);
+    const flower=p%4===0?[R()*14-7,R()*10-5,R()<.5?'#fff8e6':'#ffd84a']:null;
+    for(let l=1;l<=GL;l++){const v=l/GL;
+      g.setTransform(k,0,0,k,p*gaPx+GB/2*k,(l-1)*gaPx+GB/2*k);
+      g.save(); g.beginPath(); g.rect(-GB/2,-GB/2,GB,GB); g.clip();
+      // turf: a rounded square a little bigger than the cell with a wavy rim, so neighbouring cells merge into one lawn
+      const h=CELL/2-1+3*v, e=4+2*v;
+      g.fillStyle=`rgba(72,138,48,${.35+.45*v})`; rr(g,-h,-h+1.5,2*h,2*h,9); g.fill(); edge.forEach(([cx,cy,q])=>{ell(g,cx*(h-2),cy*(h-2)+1.5,e*q,e*q); g.fill();});
+      g.fillStyle=`rgba(108,178,70,${.35+.5*v})`; rr(g,-h+1.5,-h,2*h-3,2*h-3,8); g.fill(); edge.forEach(([cx,cy,q])=>{ell(g,cx*(h-3.5),cy*(h-3.5),e*q*.8,e*q*.8); g.fill();});
+      if(v>=.2){
+        g.lineCap='round'; g.lineWidth=1.4;
+        blades.forEach(([bx,by,h,lean,light])=>{const hh=(3+8*v)*h; g.strokeStyle=light?'#93d363':'#3d872f';
+          g.beginPath(); g.moveTo(bx,by); g.quadraticCurveTo(bx+lean*1.5,by-hh*.6,bx+lean*3,by-hh); g.stroke();});
+        if(flower&&v>.85){g.fillStyle=flower[2]; ell(g,flower[0],flower[1],1.7,1.7); g.fill(); g.fillStyle='#e9a23b'; ell(g,flower[0],flower[1],.65,.65); g.fill();}
+      }
+      g.restore();
+    }
+  }
+}
+
+// ---------- look & feel: screen-only animation state (never sent to other players) ----------
+const FEEL={hits:{},bump:{},money:null,li:-1,mdir:0,lastT:0};
+const easeOutBack=q=>{q-=1; return 1+q*q*(2.7*q+1.7);};
+const easeInOut=q=>q<.5?4*q*q*q:1-Math.pow(-2*q+2,3)/2;
+function bumpScale(key){const t0=FEEL.bump[key]; if(t0==null) return 1; const q=(now-t0)/.35; return q<0||q>1?1:1+.08*Math.sin(q*Math.PI)*(1-q*.4);}
+// 1 right after a wild animal takes a hit, falling to 0 over a fifth of a second
+function hitAmt(id,val){const h=FEEL.hits[id]; if(!h){FEEL.hits[id]={v:val,t:-9}; return 0;} if(val>h.v) h.t=now; h.v=val; const q=(now-h.t)/.22; return q>=0&&q<1?1-q:0;}
+function withHit(g,o,val,cy,draw){
+  const k=hitAmt(o.id,val||0); if(!k){draw(); return;}
+  g.save(); g.translate(o.x+Math.sin(now*90)*2.4*k,o.y); g.scale(1+.16*k,1-.14*k); g.translate(-o.x,-o.y); draw(); g.restore();
+  g.strokeStyle=`rgba(255,226,110,${k})`; g.lineWidth=2.2; g.lineCap='round'; g.beginPath();
+  for(let i=0;i<7;i++){const a=i*.9+.4, r0=9+(1-k)*8, r1=r0+7*k; g.moveTo(o.x+Math.cos(a)*r0,o.y-cy+Math.sin(a)*r0); g.lineTo(o.x+Math.cos(a)*r1,o.y-cy+Math.sin(a)*r1);} g.stroke();
+}
+// Daytime life: drifting cloud shadows, butterflies over the field, glints on the canal.
+function drawAmbient(g,t){
+  for(let k=0;k<2;k++){const x=((t*7+k*300)%(W+420))-210, y=230+k*170;
+    g.fillStyle='rgba(20,45,30,.055)'; ell(g,x,y,110,40); g.fill(); ell(g,x+62,y+16,74,30); g.fill(); ell(g,x-58,y+12,58,24); g.fill();}
+  const BC=[['#f29a2e','#c2581a'],['#ffe066','#c99a1a'],['#f6f2ff','#9a8fb8']];
+  for(let k=0;k<3;k++){
+    const x=FX+FW/2+Math.sin(t*.31+k*2.1)*FW*.42+Math.sin(t*1.3+k)*12, y=FY+FH/2+Math.sin(t*.23+k*3.1)*FH*.42+Math.cos(t*1.7+k)*9;
+    const f=.25+.75*Math.abs(Math.sin(t*15+k*1.7)), [c1,c2]=BC[k];
+    g.fillStyle='rgba(30,20,5,.12)'; ell(g,x,y+16,4,1.3); g.fill();
+    g.save(); g.translate(x,y); g.scale(1.7,1.7); g.translate(-x,-y);
+    g.fillStyle=c1; ell(g,x-3.2*f,y-1,3.4*f,2.6); g.fill(); ell(g,x+3.2*f,y-1,3.4*f,2.6); g.fill();
+    g.fillStyle=c2; ell(g,x-2.4*f,y+1.6,2.3*f,1.7); g.fill(); ell(g,x+2.4*f,y+1.6,2.3*f,1.7); g.fill();
+    g.fillStyle='#3a2a1a'; ell(g,x,y,.8,2.4); g.fill(); g.restore();
+  }
+  for(let k=0;k<6;k++){const a=Math.sin(t*2.2+k*1.9); if(a<.6) continue; const x=24+k*67+(k%2)*20, y=607+(k%3)*10, r=(a-.6)*6;
+    g.strokeStyle=`rgba(255,255,240,${(a-.6)*2})`; g.lineWidth=1.1; g.beginPath(); g.moveTo(x-r,y); g.lineTo(x+r,y); g.moveTo(x,y-r*.6); g.lineTo(x,y+r*.6); g.stroke();}
+}
+// The money counter rolls to its new value and pops green (earned) or red (spent).
+function tickMoney(){
+  const el=$('#money'), tNow=performance.now(), dt=Math.min(.1,(tNow-FEEL.lastT)/1000); FEEL.lastT=tNow;
+  if(FEEL.money===null||FEEL.li!==G.li){FEEL.money=G.money; FEEL.li=G.li; FEEL.target=G.money; el.textContent='₹'+G.money.toLocaleString('en-IN'); return;}
+  if(G.money!==FEEL.target){const up=G.money>FEEL.target; FEEL.target=G.money; el.classList.remove('up','down'); void el.offsetWidth; el.classList.add(up?'up':'down');}
+  if(FEEL.money===G.money) return;
+  FEEL.money+=(G.money-FEEL.money)*Math.min(1,dt*9); if(Math.abs(G.money-FEEL.money)<1) FEEL.money=G.money;
+  el.textContent='₹'+Math.round(FEEL.money).toLocaleString('en-IN');
 }
 
 // ---------- game state ----------
@@ -1369,16 +1446,18 @@ function render(){
   G.products.forEach(p=>list.push([p.y-1,()=>drawProduct(p)]));
   G.animals.forEach(a=>list.push([a.y,()=>drawAnimal(a)]));
   G.cages.forEach(c=>list.push([c.y,()=>drawCage(c)]));
-  G.elephants.forEach(e=>list.push([e.y,()=>drawElephantBoss(g,e,t)]));
-  G.jackals.forEach(j=>list.push([j.y,()=>{drawJackal(g,j.x,j.y,j.dir,j.walk,j.mv,j.stun); if(j.carry) drawCarried(j); }]));
-  G.boars.forEach(b=>list.push([b.y,()=>drawBoar(g,b.x,b.y,b.dir,b.walk,b.mv,b.stun)]));
-  G.monkeys.forEach(m=>list.push([m.y,()=>{drawMonkey(g,m.x,m.y,m.dir,m.walk,m.mv,m.item,m.stun); if(m.state!=='scared') tapPips(m.x,m.y-32,m.taps,m.need);}]));
+  G.elephants.forEach(e=>list.push([e.y,()=>withHit(g,e,e.pts,40,()=>drawElephantBoss(g,e,t))]));
+  G.jackals.forEach(j=>list.push([j.y,()=>{withHit(g,j,j.taps,12,()=>drawJackal(g,j.x,j.y,j.dir,j.walk,j.mv,j.stun)); if(j.carry) drawCarried(j); }]));
+  G.boars.forEach(b=>list.push([b.y,()=>withHit(g,b,b.taps,12,()=>drawBoar(g,b.x,b.y,b.dir,b.walk,b.mv,b.stun))]));
+  G.monkeys.forEach(m=>list.push([m.y,()=>{withHit(g,m,m.taps,14,()=>drawMonkey(g,m.x,m.y,m.dir,m.walk,m.mv,m.item,m.stun)); if(m.state!=='scared') tapPips(m.x,m.y-32,m.taps,m.need);}]));
   list.sort((a,b)=>a[0]-b[0]).forEach(e=>e[1]());
   // lower buildings
-  drawKBCached(g,'store',WH.x,WH.by,WH.w,{wall:'#efe5cc',pillar:'#5b3a1f',h:44,roofH:24,sign:'STOREHOUSE'});
+  const sb=bumpScale('store');
+  drawKBCached(g,'store',WH.x,WH.by,WH.w,{wall:'#efe5cc',pillar:'#5b3a1f',h:44,roofH:24,sign:'STOREHOUSE'},2-sb,sb);
   const used=storeUsed(), cap=storeCap();
-  g.fillStyle=used>=cap?'#a9472b':'rgba(36,24,12,.85)'; rr(g,WH.x-27,WH.by-9,54,18,9); g.fill();
-  g.fillStyle='#fff6d8'; g.font='800 12px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText(`${used}/${cap}`,WH.x,WH.by);
+  g.save(); g.translate(WH.x,WH.by); g.scale(1+(sb-1)*3,1+(sb-1)*3);
+  g.fillStyle=used>=cap?'#a9472b':'rgba(36,24,12,.85)'; rr(g,-27,-9,54,18,9); g.fill();
+  g.fillStyle='#fff6d8'; g.font='800 12px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText(`${used}/${cap}`,0,0); g.restore();
   drawWell(g,t);
   // vehicle
   const T=G.truck, lvl=autoLvl();
@@ -1390,6 +1469,7 @@ function render(){
   G.boats.forEach(b=>{const p=b.t/b.dur; let x;
     if(p<.4){const q=p/.4; x=-60+(JETTY+60)*(1-Math.pow(1-q,2));} else if(p<.55) x=JETTY; else{const q=(p-.55)/.45; x=JETTY+(W+80-JETTY)*q*q;}
     drawBoat(g,x+8,b.spawned?null:b.cargo,t);});
+  if(!G.L.night&&(!G.dn||G.dn.phase==='day')) drawAmbient(g,t);
   drawNight(g,t);
   if(G.L.night){g.fillStyle='rgba(18,26,70,.28)'; g.fillRect(0,0,W,H);}
   drawEvents(g,t);
@@ -1422,7 +1502,8 @@ function drawWorkshop(i,t){
       g.fillStyle=G.money>=d.cost?'#2f6b3a':'#a9472b'; g.font='800 13px '+FONT; g.fillText(`Build ₹${d.cost}`,x-22,WS_BY-53);}
     return;
   }
-  drawKBCached(g,w.type+bw,x,WS_BY,bw,{wall:d.wall,pillar:d.pillar,sign:d.sign,extra:WS_EXTRA[w.type]});
+  const br=w.busy&&!w.broken?.012*Math.sin(now*7):0, wb=bumpScale('ws'+Math.round(x));
+  drawKBCached(g,w.type+bw,x,WS_BY,bw,{wall:d.wall,pillar:d.pillar,sign:d.sign,extra:WS_EXTRA[w.type]},(1+br)*(2-wb),(1-br)*wb);
   if(w.broken>0){g.fillStyle='rgba(40,20,10,.55)'; rr(g,x-bw/2,WS_BY-62,bw,58,6); g.fill(); g.strokeStyle='#e2b33c'; g.lineWidth=2.5; g.beginPath(); g.moveTo(x-14,WS_BY-48); g.lineTo(x+2,WS_BY-34); g.lineTo(x-6,WS_BY-28); g.lineTo(x+12,WS_BY-14); g.stroke();
     g.fillStyle='#fff6d8'; g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText(`Repairs ${Math.ceil(w.broken)}s`,x,WS_BY-8); return;}
   if(w.busy){
@@ -1443,24 +1524,36 @@ function drawWorkshop(i,t){
 }
 function drawProduct(p){
   const g=ctx; if(p.life<4&&Math.floor(p.life*6)%2===0) return;
-  const s=Math.min(1,p.age*6)*(1+.06*Math.sin(now*6));
-  g.fillStyle='rgba(30,20,5,.2)'; ell(g,p.x,p.y+5,7,2.4); g.fill();
-  drawItem(g,p.type,p.x,p.y-2,s*1.1);
+  const a=p.age; let lift=0, sx=1, sy=1;
+  if(a<.42){const q=a/.42; lift=22*Math.sin(q*Math.PI)*(1-q*.3);}
+  else if(a<.62) lift=5*Math.sin((a-.42)/.2*Math.PI);
+  else if(a<.74){const q=Math.sin((a-.62)/.12*Math.PI); sx=1+.18*q; sy=1-.16*q;}
+  if(a>=.42&&a<.5){const q=Math.sin((a-.42)/.08*Math.PI); sx=1+.25*q; sy=1-.22*q;}
+  const pop=a<.25?easeOutBack(Math.min(1,a/.25)):1, s=1.28*pop*(1+.035*Math.sin(now*5+p.id)), sh=1-lift/40;
+  g.fillStyle='rgba(30,20,5,.2)'; ell(g,p.x,p.y+5,7.5*sh,2.6*sh); g.fill();
+  g.save(); g.translate(p.x,p.y+3-lift); g.scale(sx,sy); drawItem(g,p.type,0,-5,s); g.restore();
+  const gl=(now*.55+p.id*.37)%3; if(gl<.3){const q=Math.sin(gl/.3*Math.PI), x=p.x+5, y=p.y-9-lift;
+    g.strokeStyle=`rgba(255,255,235,${q})`; g.lineWidth=1.3; g.beginPath(); g.moveTo(x-4*q,y); g.lineTo(x+4*q,y); g.moveTo(x,y-4*q); g.lineTo(x,y+4*q); g.stroke();}
 }
+const ANIM_LOOK={hen:[1.3,12],duck:[1.25,10],pig:[1.15,10],buffalo:[1.1,8]}; // [draw scale, step rate]
 function drawAnimal(a){
   const g=ctx;
-  const st=ANIM[a.type];
-  if(a.type==='hen') drawHen(g,a.x,a.y,a.dir,a.walk,a.mv);
-  else if(a.type==='duck') drawDuck(g,a.x,a.y,a.dir,a.walk,a.mv);
-  else if(a.type==='pig') drawPig(g,a.x,a.y,a.dir,a.walk,a.mv,.7+.4*a.prod);
-  else drawBuffalo(g,a.x,a.y,a.dir,a.walk,a.mv,.6+.45*a.prod);
+  const st=ANIM[a.type], [k,rate]=ANIM_LOOK[a.type]||[1,10];
+  // stretch at the top of each hop, squash as the feet land; a slow breath when standing
+  const sq=a.mv?-.055*Math.cos(a.walk*rate*2):.02*Math.sin(now*3+(a.id%7));
+  g.save(); g.translate(a.x,a.y); g.scale(k*(1-sq*.6),k*(1+sq));
+  if(a.type==='hen') drawHen(g,0,0,a.dir,a.walk,a.mv);
+  else if(a.type==='duck') drawDuck(g,0,0,a.dir,a.walk,a.mv);
+  else if(a.type==='pig') drawPig(g,0,0,a.dir,a.walk,a.mv,.7+.4*a.prod);
+  else drawBuffalo(g,0,0,a.dir,a.walk,a.mv,.6+.45*a.prod);
+  g.restore();
   if(st.meat){
-    const ty=a.y-(a.type==='pig'?24:32);
+    const ty=a.y-(a.type==='pig'?24:32)*k;
     if(a.ready){const by=ty-4+Math.sin(now*4)*1.5; g.fillStyle='#2f9a4a'; ell(g,a.x,by,8,8); g.fill(); g.strokeStyle='#fff'; g.lineWidth=2; g.beginPath(); g.moveTo(a.x-3.5,by); g.lineTo(a.x-1,by+3); g.lineTo(a.x+4,by-3); g.stroke(); return;}
     if(a.food>=.35){g.fillStyle='rgba(36,24,12,.55)'; rr(g,a.x-10,ty-2,20,4,2); g.fill(); g.fillStyle='#6fc36b'; rr(g,a.x-9,ty-1.2,18*a.prod,2.4,1.2); g.fill();}
   }
   if(a.food<.35){
-    const y=a.y-24;
+    const y=a.y-24*k;
     if(a.food<=0){g.fillStyle='#d8352a'; ell(g,a.x,y,7,7); g.fill(); g.fillStyle='#fff'; g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.fillText('!',a.x,y+1);}
     else{g.fillStyle='rgba(36,24,12,.7)'; rr(g,a.x-10,y-2,20,5,2.5); g.fill(); g.fillStyle=a.food<.15?'#e05a3a':'#e2b33c'; rr(g,a.x-9,y-1,18*(a.food/.35),3,1.5); g.fill();}
   }
@@ -1485,7 +1578,9 @@ function drawFx(f){
   else if(f.k==='splash'){g.fillStyle=`rgba(80,180,210,${.8*(1-p)})`; for(let k=0;k<8;k++){const a=k*.785; ell(g,f.x+Math.cos(a)*p*26,f.y+Math.sin(a)*p*14-6*Math.sin(p*Math.PI),2.2,2.2); g.fill();}
     g.strokeStyle=`rgba(80,180,210,${.6*(1-p)})`; g.lineWidth=1.5; ell(g,f.x,f.y,p*30,p*15); g.stroke();}
   else if(f.k==='tap'){g.strokeStyle=`rgba(31,159,174,${1-p})`; g.lineWidth=2.5; ell(g,f.x,f.y,6+p*20,6+p*20); g.stroke();}
-  else if(f.k==='fly'){const q=p*p, x=f.x+(f.tx-f.x)*q, y=f.y+(f.ty-f.y)*q-Math.sin(p*Math.PI)*40; drawItem(g,f.item,x,y,1.1-.4*p);}
+  else if(f.k==='fly'){const q=easeInOut(p), x=f.x+(f.tx-f.x)*q, y=f.y+(f.ty-f.y)*q-Math.sin(p*Math.PI)*48;
+    for(let k=1;k<=3;k++){const pq=Math.max(0,p-k*.06), qq=easeInOut(pq); g.fillStyle=`rgba(255,240,180,${.45-.12*k})`; ell(g,f.x+(f.tx-f.x)*qq,f.y+(f.ty-f.y)*qq-Math.sin(pq*Math.PI)*48,2.6-.5*k,2.6-.5*k); g.fill();}
+    g.save(); g.translate(x,y); g.rotate(Math.sin(p*Math.PI)*.5); drawItem(g,f.item,0,0,1.3-.6*p); g.restore();}
 }
 
 // ---------- UI ----------
@@ -1521,10 +1616,10 @@ const MEDAL_NAME=['','Bronze','Silver','Gold'], MEDAL_VAR=['','var(--bronze)','v
 let hudSig='';
 function renderHUD(){
   if(!G) return;
+  tickMoney();
   const goals=Object.entries(G.L.goals);
   const sig=G.money+'|'+goals.map(([k])=>G.collected[k]||0).join(',')+'|'+Math.floor(G.t)+'|'+G.state+'|'+(G.dn?G.dn.phase+Math.floor(G.dn.t):'')+G.tool+G.shovel;
   if(sig===hudSig) return; hudSig=sig;
-  $('#money').textContent='₹'+G.money.toLocaleString('en-IN');
   const left=Math.max(0,timeLimit(G.L)-G.t), nt=isNight();
   $('#time').textContent=nt?'☾ '+fmtT(Math.ceil(G.dn.len-G.dn.t)):fmtT(Math.ceil(left)); $('#timer').classList.toggle('low',!nt&&left<=30); $('#timer').classList.toggle('night',nt);
   const tb=$('#btnTool'), nn=nightish(); tb.textContent=nn?(G.tool==='stick'?'Stick':'Net'):'Dig'; tb.setAttribute('aria-label',nn?'Tool: '+(G.tool==='stick'?'stick':'net'):'Shovel'); tb.classList.toggle('on',!nn&&G.shovel);
@@ -1542,6 +1637,7 @@ function startLevel(i,fromNet){
   // Online, the server starts levels: the leader asks for one, and everyone starts when the server says so.
   if(NET.online&&!fromNet){if(NET.lead) NET.send({t:'start',li:i,up:SAVE.up,nights:SAVE.nights!==false}); return;}
   if(NET.role==='host') NET.send({t:'start',li:i});
+  FEEL.hits={}; FEEL.bump={};
   G=ENG.newGame(i,{hard:coop()||BOT.armed,up:NET.role==='guest'?(NET.up||SAVE.up):SAVE.up,nights:NET.online?NET.nights:SAVE.nights!==false,bot:BOT.armed&&!NET.role?{skill:BOT.skill}:null});
   hudSig=''; setMusic(LEVELS[i].rush?'rush':'play');
   $('#lvlName').textContent=`${i+1}. ${G.L.name}${G.L.hard?' · Hard':''}`;

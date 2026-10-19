@@ -360,7 +360,7 @@ const bg=document.createElement('canvas'), bctx=bg.getContext('2d');
 let S=1, DPR=1;
 
 // ---------- save ----------
-const APP_VERSION='v26';
+const APP_VERSION='v27';
 // The online game server (Cloudflare). Empty: fall back to the old phone-to-phone link. ?server=<url> overrides it.
 const DEFAULT_SERVER='https://naadan-frenzy-server.nmanirmal.workers.dev';
 const SERVER_URL=(()=>{try{const q=new URLSearchParams(location.search).get('server'); if(q) return q;}catch(e){} return DEFAULT_SERVER;})();
@@ -1159,20 +1159,26 @@ let TORCH={x:W/2,y:H/2};
 // temple elephant (with nettipattam and parasol) or the wild tusker
 function drawElephant(g,x,y,dir,t,mv,o){
   o=o||{}; const s=o.s||1;
+  const C=o.boss?{leg:'#3f3c47',body:'#55525e',ear:'#47444f',trunk:'#55525e'}:{leg:'#6f6f73',body:'#85858a',ear:'#77777c',trunk:'#85858a'};
   g.save(); g.translate(x,y); g.scale(dir*s,s);
   const sw=mv?Math.sin(t*6)*2.2:0, b=mv?Math.abs(Math.sin(t*6)):0;
   g.fillStyle='rgba(20,15,5,.25)'; ell(g,0,4,34,6); g.fill();
-  g.fillStyle='#6f6f73'; [[-20,sw],[-10,-sw],[10,-sw],[20,sw]].forEach(([lx,d])=>{rr(g,lx-4.5+d*.4,-16,9,20,3); g.fill();});
+  g.fillStyle=C.leg; [[-20,sw],[-10,-sw],[10,-sw],[20,sw]].forEach(([lx,d])=>{rr(g,lx-4.5+d*.4,-16,9,20,3); g.fill();});
+  if(o.boss){g.fillStyle='#d9d2c4'; [[-20,sw],[-10,-sw],[10,-sw],[20,sw]].forEach(([lx,d])=>{for(let n=0;n<3;n++){ell(g,lx-2.5+n*2.5+d*.4,3.2,1,.8); g.fill();}});}
   g.translate(0,-b);
-  g.strokeStyle='#6f6f73'; g.lineWidth=2; g.beginPath(); g.moveTo(-29,-30); g.quadraticCurveTo(-35,-22,-33,-12); g.stroke();
-  g.fillStyle='#85858a'; ell(g,0,-27,30,20); g.fill();
+  g.strokeStyle=C.leg; g.lineWidth=2; g.beginPath(); g.moveTo(-29,-30); g.quadraticCurveTo(-35,-22,-33,-12); g.stroke();
+  g.fillStyle=C.body; ell(g,0,-27,30,20); g.fill();
+  if(o.boss){g.fillStyle='rgba(190,200,230,.18)'; ell(g,-3,-37,22,7,-.08); g.fill();
+    g.strokeStyle='rgba(20,18,26,.35)'; g.lineWidth=1.2; g.beginPath(); for(let k=0;k<4;k++){g.moveTo(-18+k*9,-14); g.quadraticCurveTo(-16+k*9,-20,-19+k*9,-25);} g.stroke();}
   if(o.decor){g.fillStyle='#b8322a'; rr(g,-18,-46,30,14,4); g.fill(); g.fillStyle='#e2b33c'; for(let k=0;k<5;k++){ell(g,-14+k*6.5,-33,1.6,1.6); g.fill();}}
-  g.fillStyle='#85858a'; ell(g,26,-34,15,16); g.fill();
-  g.save(); g.translate(17,-32); g.rotate(Math.sin(t*3)*.12); g.fillStyle='#77777c'; ell(g,0,0,10,14); g.fill(); g.restore();
-  g.strokeStyle='#85858a'; g.lineWidth=7; g.lineCap='round'; g.beginPath(); g.moveTo(36,-30); g.quadraticCurveTo(47,-14+sw*.6,40,-1); g.stroke();
+  g.fillStyle=C.body; ell(g,26,-34,15,16); g.fill();
+  g.save(); g.translate(17,-32); g.rotate(Math.sin(t*3)*.12); g.fillStyle=C.ear; ell(g,0,0,10,14); g.fill();
+  if(o.boss){g.fillStyle='rgba(200,120,130,.35)'; ell(g,1,1,6,9); g.fill();} g.restore();
+  g.strokeStyle=C.trunk; g.lineWidth=7; g.lineCap='round'; g.beginPath(); g.moveTo(36,-30); g.quadraticCurveTo(47,-14+sw*.6,40,-1); g.stroke();
   g.strokeStyle='#f3ecd8'; g.lineWidth=3.2; g.beginPath(); g.moveTo(32,-24); g.quadraticCurveTo(44,-19,47,-27); g.stroke();
   if(o.tusks===2){g.strokeStyle='#e6dcc2'; g.lineWidth=2.6; g.beginPath(); g.moveTo(29,-23); g.quadraticCurveTo(39,-17,42,-24); g.stroke();}
-  g.fillStyle='#1d1d1d'; ell(g,31,-39,1.6,1.6); g.fill();
+  if(o.boss&&o.angry){g.fillStyle='rgba(255,60,40,.35)'; ell(g,31,-39,4.5,4.5); g.fill(); g.fillStyle='#ff4b32'; ell(g,31,-39,2,2); g.fill();}
+  else{g.fillStyle='#1d1d1d'; ell(g,31,-39,1.6,1.6); g.fill();}
   if(o.angry){g.strokeStyle='#d8352a'; g.lineWidth=1.6; g.beginPath(); g.moveTo(27,-43); g.lineTo(34,-41); g.stroke();}
   if(o.decor){
     g.fillStyle='#e2b33c'; g.beginPath(); g.moveTo(22,-50); g.lineTo(36,-48); g.lineTo(38,-24); g.quadraticCurveTo(30,-18,26,-24); g.closePath(); g.fill();
@@ -1284,11 +1290,14 @@ $('#sayGrid').addEventListener('click',e=>{const b=e.target.closest('[data-say]'
 // It tramples grass, flattens trees and smashes a workshop it reaches. Taps drive it off;
 // two players (or a player and Kuttan) hitting within 0.7s of each other score a team hit worth 3.
 function drawElephantBoss(g,e,t){
-  drawElephant(g,e.x,e.y,e.dir,e.walk,true,{tusks:1,angry:e.state!=='flee',s:.85});
+  // dust kicked up by his feet
+  for(let k=0;k<4;k++){const q=((t*1.6+k/4)%1); g.fillStyle=`rgba(190,150,100,${.4*(1-q)})`; ell(g,e.x-e.dir*(18+q*22)+(k%2?8:-8),e.y+2-q*8,4+q*7,2.5+q*4); g.fill();}
+  drawElephant(g,e.x,e.y,e.dir,e.walk,true,{tusks:1,angry:e.state!=='flee',s:.85,boss:true});
   if(e.state==='flee') return;
-  const w=54, p=Math.min(1,e.pts/e.need), y=e.y-80;
-  g.fillStyle='rgba(36,24,12,.8)'; rr(g,e.x-w/2,y,w,8,4); g.fill();
-  g.fillStyle='#7fe3ee'; rr(g,e.x-w/2+1,y+1,(w-2)*p,6,3); g.fill();
+  const w=58, p=Math.min(1,e.pts/e.need), y=e.y-82, lx=clamp(e.x,w/2+4,W-w/2-4); // label stays on screen while he walks in
+  g.font='800 11px '+FONT; g.textAlign='center'; g.textBaseline='middle'; g.lineWidth=3; g.strokeStyle='rgba(30,10,10,.85)'; g.strokeText('Ottakomban',lx,y-8); g.fillStyle='#ffd9c9'; g.fillText('Ottakomban',lx,y-8);
+  g.fillStyle='rgba(36,24,12,.85)'; rr(g,lx-w/2,y,w,9,4.5); g.fill();
+  g.fillStyle='#7fe3ee'; rr(g,lx-w/2+1,y+1,(w-2)*p,7,3.5); g.fill();
 }
 
 // ---------- Vallam Kali (snake-boat race) bonus round ----------
@@ -1384,6 +1393,29 @@ function drawPen(g){
   g.fillStyle='#7a5a2a'; for(let x=L;x<=R2+1;x+=16){g.fillRect(x-2,T,4,26); g.fillRect(x-2,B-14,4,20);}
   g.restore();
 }
+// A whole-level night (Ottakomban's Night): bright in the middle, dark at the edges, lit by
+// lanterns, festival string lights and fireflies, so the farm keeps its colours.
+let VIGNETTE=null;
+function drawFestNight(g,t){
+  if(!VIGNETTE){VIGNETTE=g.createRadialGradient(W/2,FY+FH/2,150,W/2,FY+FH/2,430); VIGNETTE.addColorStop(0,'rgba(16,18,64,0)'); VIGNETTE.addColorStop(1,'rgba(16,18,64,.5)');}
+  g.fillStyle='rgba(40,40,110,.07)'; g.fillRect(0,0,W,H);
+  g.fillStyle=VIGNETTE; g.fillRect(0,0,W,H);
+  const sky=g.createLinearGradient(0,0,0,26); sky.addColorStop(0,'rgba(48,30,96,.75)'); sky.addColorStop(1,'rgba(220,110,60,.25)'); g.fillStyle=sky; g.fillRect(0,0,W,26);
+  g.fillStyle='rgba(255,246,214,.95)'; ell(g,W-30,11,7,7); g.fill(); g.fillStyle='rgba(255,246,214,.18)'; ell(g,W-30,11,14,14); g.fill();
+  g.save(); g.globalCompositeOperation='lighter';
+  const lamp=(x,y,r,a)=>{const gr=g.createRadialGradient(x,y,2,x,y,r); gr.addColorStop(0,`rgba(255,180,90,${a})`); gr.addColorStop(1,'rgba(255,180,90,0)'); g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();};
+  if(!evOn('powercut')){G.ws.forEach((w,i)=>{if(w&&w.built) lamp(G.wsX[i],WS_BY-18,52,.22);}); lamp(WH.x,WH.by-25,48,.16); lamp(WELL.x,WELL.by-20,38,.13); lamp(PARK.x,PARK.y-10,38,.12);}
+  // string of festival bulbs above the workshops
+  const BULB=['#ffd36b','#ff7a59','#7fe3ee','#b7ff8a','#ff9be0'];
+  g.strokeStyle='rgba(40,30,20,.6)'; g.lineWidth=.8; g.beginPath(); g.moveTo(6,28); for(let x=6;x<=W-6;x+=6){const u=((x-6)%104)/104; g.lineTo(x,28+Math.sin(u*Math.PI)*7);} g.stroke();
+  for(let x=12,i=0;x<W-6;x+=13,i++){const u=((x-6)%104)/104, y=29+Math.sin(u*Math.PI)*7, on=evOn('powercut')?.12:.65+.35*Math.sin(t*3+i*1.3);
+    g.fillStyle=BULB[i%BULB.length]; g.globalAlpha=on; ell(g,x,y,2.2,2.6); g.fill(); g.globalAlpha=on*.35; ell(g,x,y,6,6); g.fill();}
+  g.globalAlpha=1;
+  // fireflies drifting over the field
+  for(let k=0;k<10;k++){const x=FX+FW/2+Math.sin(t*.21+k*1.7)*FW*.46+Math.sin(t*1.1+k)*8, y=FY+FH/2+Math.sin(t*.17+k*2.9)*FH*.45+Math.cos(t*.9+k)*7, a=.5+.5*Math.sin(t*2.5+k*2.2);
+    g.fillStyle=`rgba(210,255,120,${.25*a})`; ell(g,x,y,5,5); g.fill(); g.fillStyle=`rgba(240,255,170,${.9*a})`; ell(g,x,y,1.4,1.4); g.fill();}
+  g.restore();
+}
 function drawNight(g,t){
   const dk=dark(); if(dk<=0) return;
   g.fillStyle=`rgba(8,14,44,${.55*dk})`; g.fillRect(0,0,W,H);
@@ -1471,7 +1503,7 @@ function render(){
     drawBoat(g,x+8,b.spawned?null:b.cargo,t);});
   if(!G.L.night&&(!G.dn||G.dn.phase==='day')) drawAmbient(g,t);
   drawNight(g,t);
-  if(G.L.night){g.fillStyle='rgba(18,26,70,.28)'; g.fillRect(0,0,W,H);}
+  if(G.L.night) drawFestNight(g,t);
   drawEvents(g,t);
   // effects
   G.fx.forEach(f=>drawFx(f));
